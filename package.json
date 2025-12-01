@@ -1,0 +1,14 @@
+{
+  "name": "sleepcastjam",
+  "version": "1.0.0",
+  "description": "Podcast noise web app with Netlify Functions",
+  "main": "index.js",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["podcast", "noise", "netlify"],
+  "author": "",
+  "license": "ISC"
+}
