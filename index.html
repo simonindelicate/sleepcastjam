@@ -32,6 +32,13 @@
       overflow: hidden;
       border-bottom: 2px solid rgba(148, 163, 184, 0.15);
     }
+    .hero::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.55), rgba(15, 23, 42, 0.35));
+      pointer-events: none;
+    }
     #ghostContainer {
       position: absolute;
       inset: 0;
@@ -84,6 +91,40 @@
       letter-spacing: 0.05em;
       display: none;
       backdrop-filter: blur(6px);
+    }
+    .hero-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .hero-play {
+      width: 150px;
+      height: 150px;
+      border-radius: 50%;
+      border: 2px solid rgba(56, 189, 248, 0.9);
+      background: rgba(15, 23, 42, 0.75);
+      color: #e0f2fe;
+      font-size: 28px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(10px);
+      pointer-events: auto;
+    }
+    .hero-play:active { transform: scale(0.98); }
+    .hero-controls {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: #e2e8f0;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     }
     main {
       max-width: 1100px;
@@ -187,9 +228,13 @@
     <div id="ghostContainer"></div>
     <div class="noise-chip" id="noiseLabel">Noise: Pool</div>
     <div class="hero-timer" id="heroTimer"></div>
+    <div class="hero-center">
+      <button id="heroPlayToggle" class="hero-play" type="button">Play</button>
+      <button id="scrollControls" class="hero-controls" type="button">Controls</button>
+    </div>
   </div>
 
-  <main>
+  <main id="controls">
     <section>
       <h2>Feeds</h2>
       <div class="row spaced" style="margin-bottom: 12px;">
@@ -199,12 +244,17 @@
         </div>
         <span id="topUpdatedAt" class="small"></span>
       </div>
+      <div class="row" style="margin-bottom: 8px; justify-content: flex-end;">
+        <button id="toggleFeedList" type="button">Hide Feeds</button>
+      </div>
       <div class="row" style="margin-bottom: 12px;">
         <input type="url" id="feedUrl" placeholder="Add RSS URL" style="flex:1; min-width:240px;" />
         <button id="addFeed">Add</button>
         <span id="addStatus" class="small"></span>
       </div>
-      <ul id="feedList"></ul>
+      <div id="feedListContainer">
+        <ul id="feedList"></ul>
+      </div>
     </section>
 
     <section>

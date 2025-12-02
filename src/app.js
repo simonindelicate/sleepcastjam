@@ -73,6 +73,15 @@ const elements = {
   soundscapeGrid: document.getElementById('soundscapeGrid'),
   ghostContainer: document.getElementById('ghostContainer'),
   topUpdatedAt: document.getElementById('topUpdatedAt'),
+  heroPlayToggle: document.getElementById('heroPlayToggle'),
+  scrollControls: document.getElementById('scrollControls'),
+  controlsAnchor: document.getElementById('controls'),
+  feedListContainer: document.getElementById('feedListContainer'),
+  toggleFeedList: document.getElementById('toggleFeedList'),
+};
+
+const uiState = {
+  feedListCollapsed: false,
 };
 
 function setNoiseLabel(text) {
@@ -180,6 +189,16 @@ function renderFeeds() {
   updateEpisodeSummary();
 }
 
+function setFeedListVisibility(collapsed) {
+  uiState.feedListCollapsed = collapsed;
+  if (elements.feedListContainer) {
+    elements.feedListContainer.style.display = collapsed ? 'none' : 'block';
+  }
+  if (elements.toggleFeedList) {
+    elements.toggleFeedList.textContent = collapsed ? 'Show Feeds' : 'Hide Feeds';
+  }
+}
+
 function updateTopUpdatedAt(dateString) {
   state.topUpdatedAt = dateString || null;
   if (elements.topUpdatedAt) {
@@ -194,6 +213,14 @@ function updateTopUpdatedAt(dateString) {
 
 function updatePlayStatus(message) {
   elements.playStatus.textContent = message;
+}
+
+function syncPlayButtons(isPlaying) {
+  const startLabel = isPlaying ? 'Stop' : 'Start';
+  elements.togglePlay.textContent = startLabel;
+  if (elements.heroPlayToggle) {
+    elements.heroPlayToggle.textContent = isPlaying ? 'Stop' : 'Play';
+  }
 }
 
 function updateEpisodeSummary() {
@@ -632,7 +659,7 @@ async function startPlayback() {
   await startNoise();
   state.isPlaying = true;
   updatePlayStatus('Playing');
-  elements.togglePlay.textContent = 'Stop';
+  syncPlayButtons(true);
   const firstSuccess = await playOneSnippet();
   scheduleNextSnippet(firstSuccess ? null : 1);
 
@@ -662,7 +689,7 @@ function stopPlayback(fromTimer = false) {
   state.diagnostics.nextSnippetAt = null;
   updateSnippetStatus();
   setTimeout(() => {
-    elements.togglePlay.textContent = 'Start';
+    syncPlayButtons(false);
     updatePlayStatus(fromTimer ? 'Timer ended' : 'Stopped');
   }, 2000);
 }
@@ -754,6 +781,28 @@ function attachEvents() {
     }
   });
 
+  if (elements.heroPlayToggle) {
+    elements.heroPlayToggle.addEventListener('click', () => {
+      if (state.isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
+    });
+  }
+
+  if (elements.scrollControls && elements.controlsAnchor) {
+    elements.scrollControls.addEventListener('click', () => {
+      elements.controlsAnchor.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  if (elements.toggleFeedList) {
+    elements.toggleFeedList.addEventListener('click', () => {
+      setFeedListVisibility(!uiState.feedListCollapsed);
+    });
+  }
+
   elements.noiseLevel.addEventListener('input', () => {
     if (state.noiseGain) {
       state.noiseGain.gain.value = parseFloat(elements.noiseLevel.value);
@@ -799,6 +848,8 @@ async function init() {
   }
   renderFeeds();
   attachEvents();
+  syncPlayButtons(false);
+  setFeedListVisibility(false);
   if (elements.noiseStatus) {
     elements.noiseStatus.textContent = `Soundscape selected: ${getNoiseProfile(state.selectedNoise).label}`;
   }
@@ -811,6 +862,10 @@ async function init() {
   }
   if (cachedTop?.feeds?.length && elements.feedStatus) {
     elements.feedStatus.textContent = 'Loaded cached top podcasts';
+  }
+  const shouldAutoLoadTop = !cachedTop?.feeds?.length && state.feeds.length === 0;
+  if (shouldAutoLoadTop) {
+    await handleLoadTop();
   }
   await ensureNoiseBuffer(state.selectedNoise);
 }
