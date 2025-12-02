@@ -143,30 +143,37 @@ function preloadImage(src) {
 }
 
 function loadHeroBackgrounds() {
-  let images = [];
+  const images = new Set();
   try {
     const glob = typeof import.meta !== 'undefined' && import.meta.glob
       ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
       : null;
     if (glob) {
-      images = Object.values(glob)
+      Object.values(glob)
         .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
-        .filter(Boolean);
+        .filter(Boolean)
+        .forEach((src) => images.add(src));
     }
   } catch (err) {
     console.error('Unable to glob hero backgrounds', err);
   }
 
-  const fallbackImages = [
-    '/src/assets/backgrounds/background.jpg',
-    '/src/assets/backgrounds/background2.jpg',
-  ];
+  try {
+    const ctx = typeof require === 'function' && typeof require.context === 'function'
+      ? require.context('./assets/backgrounds', false, /\.(jpg|jpeg|png|webp)$/i)
+      : null;
+    if (ctx) {
+      ctx.keys().forEach((key) => {
+        const mod = ctx(key);
+        const src = typeof mod === 'string' ? mod : mod?.default;
+        if (src) images.add(src);
+      });
+    }
+  } catch (err) {
+    console.error('Unable to load hero backgrounds via require.context', err);
+  }
 
-  fallbackImages.forEach((src) => {
-    if (!images.includes(src)) images.push(src);
-  });
-
-  heroBackgroundState.images = Array.from(new Set(images));
+  heroBackgroundState.images = Array.from(images);
   heroBackgroundState.images.forEach(preloadImage);
 }
 
