@@ -5,14 +5,25 @@ const state = {
   masterGain: null,
   noiseGain: null,
   snippetGain: null,
+  dryGain: null,
+  reverbGain: null,
   lowpass: null,
   convolver: null,
   noiseSource: null,
+  customNoiseBuffer: null,
   buffers: new Map(),
+  failureCounts: new Map(),
   isPlaying: false,
   snippetTimeoutId: null,
   timerIntervalId: null,
   endTime: null,
+  diagnostics: {
+    snippetAttempts: 0,
+    snippetSuccesses: 0,
+    lastSnippetMessage: 'Waiting to start.',
+    nextSnippetAt: null,
+    proxyNote: '',
+  },
 };
 
 const STORAGE_KEY = 'podcastNoiseUserFeeds';
@@ -28,8 +39,23 @@ const elements = {
   playStatus: document.getElementById('playStatus'),
   noiseLevel: document.getElementById('noiseLevel'),
   snippetLevel: document.getElementById('snippetLevel'),
+  minGap: document.getElementById('minGap'),
+  maxGap: document.getElementById('maxGap'),
+  minLength: document.getElementById('minLength'),
+  maxLength: document.getElementById('maxLength'),
+  tone: document.getElementById('tone'),
+  reverbMix: document.getElementById('reverbMix'),
   sleepMinutes: document.getElementById('sleepMinutes'),
   timerDisplay: document.getElementById('timerDisplay'),
+  episodeSummary: document.getElementById('episodeSummary'),
+  snippetStatus: document.getElementById('snippetStatus'),
+  nextSnippet: document.getElementById('nextSnippet'),
+  noiseStatus: document.getElementById('noiseStatus'),
+  noiseUrl: document.getElementById('noiseUrl'),
+  setNoiseUrl: document.getElementById('setNoiseUrl'),
+  noiseFile: document.getElementById('noiseFile'),
+  setNoiseFile: document.getElementById('setNoiseFile'),
+  resetNoise: document.getElementById('resetNoise'),
 };
 
 function loadUserFeeds() {
@@ -76,10 +102,41 @@ function renderFeeds() {
     }
     elements.feedList.appendChild(li);
   });
+
+  updateEpisodeSummary();
 }
 
 function updatePlayStatus(message) {
   elements.playStatus.textContent = message;
+}
+
+function updateEpisodeSummary() {
+  const total = state.episodes.length;
+  const user = state.episodes.filter((ep) => ep.userAdded).length;
+  const top = total - user;
+  if (elements.episodeSummary) {
+    elements.episodeSummary.textContent = total
+      ? `Episodes ready: ${total} (Your feeds: ${user}, Top feeds: ${top}).`
+      : 'No episodes loaded yet. Add a feed or load the Top list.';
+  }
+}
+
+function updateSnippetStatus(extra = '') {
+  const { snippetAttempts, snippetSuccesses, lastSnippetMessage, nextSnippetAt, proxyNote } = state.diagnostics;
+  if (elements.snippetStatus) {
+    const proxy = proxyNote ? ` Proxy: ${proxyNote}` : '';
+    const status = `Snippets tried: ${snippetAttempts}, played: ${snippetSuccesses}. ${lastSnippetMessage}${proxy}`;
+    elements.snippetStatus.textContent = status + (extra ? ` ${extra}` : '');
+  }
+  if (elements.nextSnippet) {
+    if (state.isPlaying && nextSnippetAt) {
+      const secs = Math.max(0, Math.round((nextSnippetAt - Date.now()) / 1000));
+      const { minGap, maxGap } = getSnippetConfig();
+      elements.nextSnippet.textContent = `Next snippet in ~${secs}s (gap range ${minGap}-${maxGap}s).`;
+    } else {
+      elements.nextSnippet.textContent = '';
+    }
+  }
 }
 
 function weightedRandomEpisode() {
@@ -97,6 +154,34 @@ function weightedRandomEpisode() {
 
 function randomBetween(min, max) {
   return Math.random() * (max - min) + min;
+}
+
+function proxiedAudioUrl(url) {
+  const encoded = encodeURIComponent(url);
+  return `/api/audio?url=${encoded}`;
+}
+
+function getNumberInput(el, fallback, minValue = -Infinity, maxValue = Infinity) {
+  const parsed = parseFloat(el?.value);
+  if (Number.isFinite(parsed)) {
+    return Math.min(Math.max(parsed, minValue), maxValue);
+  }
+  return fallback;
+}
+
+function getSnippetConfig() {
+  let minGap = getNumberInput(elements.minGap, 6, 1, 30);
+  let maxGap = getNumberInput(elements.maxGap, 18, 1, 30);
+  if (maxGap < minGap) maxGap = minGap;
+
+  let minLength = getNumberInput(elements.minLength, 18, 4, 60);
+  let maxLength = getNumberInput(elements.maxLength, 26, 4, 60);
+  if (maxLength < minLength) maxLength = minLength;
+
+  const tone = getNumberInput(elements.tone, 2200, 400, 4000);
+  const reverbMix = getNumberInput(elements.reverbMix, 0.55, 0, 1);
+
+  return { minGap, maxGap, minLength, maxLength, tone, reverbMix };
 }
 
 function buildAudioGraph() {
@@ -117,14 +202,23 @@ function buildAudioGraph() {
 
   state.lowpass = ctx.createBiquadFilter();
   state.lowpass.type = 'lowpass';
-  state.lowpass.frequency.value = 1500;
+  state.lowpass.frequency.value = getSnippetConfig().tone;
 
   state.convolver = ctx.createConvolver();
   state.convolver.buffer = createImpulseResponse(ctx);
 
+  state.dryGain = ctx.createGain();
+  state.reverbGain = ctx.createGain();
+  const { reverbMix } = getSnippetConfig();
+  state.dryGain.gain.value = 1 - reverbMix;
+  state.reverbGain.gain.value = reverbMix;
+
   state.snippetGain.connect(state.lowpass);
+  state.lowpass.connect(state.dryGain);
   state.lowpass.connect(state.convolver);
-  state.convolver.connect(state.masterGain);
+  state.dryGain.connect(state.masterGain);
+  state.convolver.connect(state.reverbGain);
+  state.reverbGain.connect(state.masterGain);
 }
 
 function createNoiseBuffer(ctx) {
@@ -140,8 +234,8 @@ function createNoiseBuffer(ctx) {
 }
 
 function createImpulseResponse(ctx) {
-  const duration = 1.5;
-  const decay = 2.5;
+  const duration = 1;
+  const decay = 1.8;
   const sampleRate = ctx.sampleRate;
   const length = sampleRate * duration;
   const impulse = ctx.createBuffer(2, length, sampleRate);
@@ -155,23 +249,52 @@ function createImpulseResponse(ctx) {
   return impulse;
 }
 
+function applyToneAndReverb() {
+  if (!state.lowpass || !state.dryGain || !state.reverbGain) return;
+  const { tone, reverbMix } = getSnippetConfig();
+  state.lowpass.frequency.value = tone;
+  state.dryGain.gain.value = 1 - reverbMix;
+  state.reverbGain.gain.value = reverbMix;
+}
+
 function startNoise() {
   const ctx = state.audioCtx;
   if (state.noiseSource) {
     try { state.noiseSource.stop(); } catch (e) { /* ignore */ }
   }
   const source = ctx.createBufferSource();
-  source.buffer = createNoiseBuffer(ctx);
+  source.buffer = state.customNoiseBuffer || createNoiseBuffer(ctx);
   source.loop = true;
   source.connect(state.noiseGain);
   source.start();
   state.noiseSource = source;
 }
 
+async function loadCustomNoiseFromUrl(url) {
+  if (!state.audioCtx) buildAudioGraph();
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Unable to fetch noise audio');
+  const arrayBuf = await resp.arrayBuffer();
+  const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
+  state.customNoiseBuffer = audioBuf;
+}
+
+async function loadCustomNoiseFromFile(file) {
+  if (!state.audioCtx) buildAudioGraph();
+  const arrayBuf = await file.arrayBuffer();
+  const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
+  state.customNoiseBuffer = audioBuf;
+}
+
 async function loadAudioBuffer(url) {
   if (state.buffers.has(url)) return state.buffers.get(url);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error('audio fetch failed');
+  const resp = await fetch(proxiedAudioUrl(url));
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    state.diagnostics.proxyNote = '';
+    throw new Error(`audio fetch failed (${resp.status}): ${detail.slice(0, 140)}`);
+  }
+  state.diagnostics.proxyNote = resp.headers.get('x-proxy-note') || '';
   const arrayBuf = await resp.arrayBuffer();
   const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
   state.buffers.set(url, audioBuf);
@@ -179,12 +302,14 @@ async function loadAudioBuffer(url) {
 }
 
 async function playOneSnippet() {
-  if (!state.isPlaying || !state.episodes.length) return;
+  if (!state.isPlaying || !state.episodes.length) return false;
   const episode = weightedRandomEpisode();
-  if (!episode) return;
+  if (!episode) return false;
+  state.diagnostics.snippetAttempts += 1;
   try {
     const buffer = await loadAudioBuffer(episode.audioUrl);
-    const snippetLength = randomBetween(8, 15);
+    const { minLength, maxLength } = getSnippetConfig();
+    const snippetLength = randomBetween(minLength, maxLength);
     const ctx = state.audioCtx;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -192,17 +317,37 @@ async function playOneSnippet() {
     const maxStart = Math.max(buffer.duration - snippetLength, 0);
     const offset = maxStart > 0 ? Math.random() * maxStart : 0;
     source.start(ctx.currentTime, offset, snippetLength);
+    state.diagnostics.snippetSuccesses += 1;
+    state.diagnostics.lastSnippetMessage = `Playing "${episode.title}"`;
+    state.failureCounts.delete(episode.audioUrl);
+    updateSnippetStatus();
+    return true;
   } catch (err) {
     console.warn('Snippet failed', err);
+    const currentFails = (state.failureCounts.get(episode.audioUrl) || 0) + 1;
+    state.failureCounts.set(episode.audioUrl, currentFails);
+    if (currentFails >= 3) {
+      state.episodes = state.episodes.filter((ep) => ep.audioUrl !== episode.audioUrl);
+      state.failureCounts.delete(episode.audioUrl);
+      updateEpisodeSummary();
+      state.diagnostics.lastSnippetMessage = `Removed failing episode: ${episode.title}`;
+    } else {
+      state.diagnostics.lastSnippetMessage = `Snippet failed (${currentFails}x): ${err?.message || err}`;
+    }
+    updateSnippetStatus();
+    return false;
   }
 }
 
-function scheduleNextSnippet() {
+function scheduleNextSnippet(forcedGapSeconds = null) {
   if (!state.isPlaying) return;
-  const gapSeconds = randomBetween(10, 60);
+  const { minGap, maxGap } = getSnippetConfig();
+  const gapSeconds = forcedGapSeconds ?? randomBetween(minGap, maxGap);
+  state.diagnostics.nextSnippetAt = Date.now() + gapSeconds * 1000;
+  updateSnippetStatus();
   state.snippetTimeoutId = setTimeout(async () => {
-    await playOneSnippet();
-    scheduleNextSnippet();
+    const success = await playOneSnippet();
+    scheduleNextSnippet(success ? null : 1);
   }, gapSeconds * 1000);
 }
 
@@ -220,6 +365,40 @@ function stopTimer() {
   }
   state.endTime = null;
   elements.timerDisplay.textContent = '';
+}
+
+async function handleCustomNoiseUrl() {
+  const url = elements.noiseUrl.value.trim();
+  if (!url) return;
+  elements.noiseStatus.textContent = 'Loading custom noise...';
+  try {
+    await loadCustomNoiseFromUrl(url);
+    elements.noiseStatus.textContent = 'Custom noise loaded';
+    if (state.isPlaying) startNoise();
+  } catch (err) {
+    console.error(err);
+    elements.noiseStatus.textContent = 'Failed to load noise URL';
+  }
+}
+
+async function handleCustomNoiseFile() {
+  const file = elements.noiseFile.files[0];
+  if (!file) return;
+  elements.noiseStatus.textContent = 'Loading file...';
+  try {
+    await loadCustomNoiseFromFile(file);
+    elements.noiseStatus.textContent = 'Custom noise loaded';
+    if (state.isPlaying) startNoise();
+  } catch (err) {
+    console.error(err);
+    elements.noiseStatus.textContent = 'Failed to load noise file';
+  }
+}
+
+function resetNoise() {
+  state.customNoiseBuffer = null;
+  elements.noiseStatus.textContent = 'Using generated noise';
+  if (state.isPlaying) startNoise();
 }
 
 function startTimer(minutes) {
@@ -244,8 +423,16 @@ async function startPlayback() {
     updatePlayStatus('No episodes loaded');
     return;
   }
+  state.diagnostics.snippetAttempts = 0;
+  state.diagnostics.snippetSuccesses = 0;
+  state.diagnostics.lastSnippetMessage = 'Starting playback...';
+  state.diagnostics.nextSnippetAt = null;
+  state.diagnostics.proxyNote = '';
+  state.failureCounts.clear();
+  updateSnippetStatus();
   if (!state.audioCtx) buildAudioGraph();
   const ctx = state.audioCtx;
+  applyToneAndReverb();
   await ctx.resume();
 
   state.masterGain.gain.cancelScheduledValues(ctx.currentTime);
@@ -258,8 +445,8 @@ async function startPlayback() {
   state.isPlaying = true;
   updatePlayStatus('Playing');
   elements.togglePlay.textContent = 'Stop';
-  await playOneSnippet();
-  scheduleNextSnippet();
+  const firstSuccess = await playOneSnippet();
+  scheduleNextSnippet(firstSuccess ? null : 1);
 
   const minutes = parseFloat(elements.sleepMinutes.value);
   if (Number.isFinite(minutes) && minutes > 0) {
@@ -284,6 +471,8 @@ function stopPlayback(fromTimer = false) {
   stopSnippets();
   stopTimer();
   state.isPlaying = false;
+  state.diagnostics.nextSnippetAt = null;
+  updateSnippetStatus();
   setTimeout(() => {
     elements.togglePlay.textContent = 'Start';
     updatePlayStatus(fromTimer ? 'Timer ended' : 'Stopped');
@@ -296,12 +485,16 @@ function updateEpisodes(feed, parsed) {
       state.episodes.push({ ...ep, feedUrl: feed.feedUrl, userAdded: feed.userAdded });
     }
   });
+  updateEpisodeSummary();
 }
 
 async function fetchFeed(feed) {
   try {
     const resp = await fetch(`/api/fetchFeed?url=${encodeURIComponent(feed.feedUrl)}`);
-    if (!resp.ok) throw new Error('Feed request failed');
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.message || `Feed request failed (${resp.status})`);
+    }
     const parsed = await resp.json();
     const withTitle = { ...feed, title: feed.title || parsed.title };
     const existing = state.feeds.find((f) => f.feedUrl === feed.feedUrl);
@@ -310,7 +503,8 @@ async function fetchFeed(feed) {
     renderFeeds();
   } catch (err) {
     console.error('Feed load error', err);
-    elements.addStatus.textContent = 'Unable to load feed';
+    elements.addStatus.textContent = `Unable to load feed: ${err.message}`;
+    updateSnippetStatus('No episodes yet – add a working feed.');
   }
 }
 
@@ -373,12 +567,32 @@ function attachEvents() {
       state.snippetGain.gain.value = parseFloat(elements.snippetLevel.value);
     }
   });
+
+  const toneControls = [elements.tone, elements.reverbMix];
+  toneControls.forEach((el) => {
+    el?.addEventListener('input', () => {
+      applyToneAndReverb();
+    });
+  });
+
+  [elements.minGap, elements.maxGap, elements.minLength, elements.maxLength].forEach((el) => {
+    el?.addEventListener('input', () => updateSnippetStatus());
+  });
+
+  elements.setNoiseUrl.addEventListener('click', handleCustomNoiseUrl);
+  elements.setNoiseFile.addEventListener('click', handleCustomNoiseFile);
+  elements.resetNoise.addEventListener('click', resetNoise);
 }
 
 async function init() {
   loadUserFeeds();
   renderFeeds();
   attachEvents();
+  if (elements.noiseStatus) {
+    elements.noiseStatus.textContent = 'Using generated noise';
+  }
+  updateEpisodeSummary();
+  updateSnippetStatus();
   if (state.feeds.length) {
     for (const feed of state.feeds) {
       await fetchFeed(feed);

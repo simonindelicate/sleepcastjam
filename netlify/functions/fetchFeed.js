@@ -40,6 +40,7 @@ function parseRss(xml) {
   while ((match = itemRegex.exec(xml))) {
     const itemXml = match[0];
     const titleText = extractTagContent(itemXml, 'title') || 'Episode';
+    const pubDate = extractTagContent(itemXml, 'pubDate');
     let audioUrl = null;
     const enclosureMatch = itemXml.match(/<enclosure[^>]*>/i);
     if (enclosureMatch) {
@@ -62,11 +63,21 @@ function parseRss(xml) {
       items.push({
         title: decodeEntities(titleText),
         audioUrl,
+        pubDate: pubDate ? Date.parse(pubDate) || null : null,
       });
     }
   }
 
-  return { title, episodes: items };
+  const sorted = items.sort((a, b) => {
+    if (a.pubDate && b.pubDate) return b.pubDate - a.pubDate;
+    if (a.pubDate) return -1;
+    if (b.pubDate) return 1;
+    return 0;
+  });
+
+  const limited = sorted.slice(0, 6).map(({ pubDate, ...rest }) => rest);
+
+  return { title, episodes: limited };
 }
 
 exports.handler = async (event) => {
