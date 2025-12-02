@@ -83,6 +83,11 @@ const elements = {
   topUpdatedAt: document.getElementById('topUpdatedAt'),
   heroPlayToggle: document.getElementById('heroPlayToggle'),
   scrollControls: document.getElementById('scrollControls'),
+  cycleBackground: document.getElementById('cycleBackground'),
+  heroBgLayers: [
+    document.getElementById('heroBgA'),
+    document.getElementById('heroBgB'),
+  ].filter(Boolean),
   controlsAnchor: document.getElementById('controls'),
   feedListContainer: document.getElementById('feedListContainer'),
   toggleFeedList: document.getElementById('toggleFeedList'),
@@ -90,7 +95,19 @@ const elements = {
 
 const uiState = {
   feedListCollapsed: true,
+  isStartingPlayback: false,
 };
+
+const heroBackgroundState = {
+  images: [],
+  activeLayer: 0,
+  currentIndex: 0,
+  isTransitioning: false,
+  pendingIndex: null,
+  intervalId: null,
+};
+
+const BACKGROUND_ROTATION_MS = 3 * 60 * 1000;
 
 function pruneTitle(rawTitle) {
   if (!rawTitle) return rawTitle;
@@ -118,6 +135,113 @@ function setHeroTimer(text) {
     elements.heroTimer.textContent = '';
     elements.heroTimer.style.display = 'none';
   }
+}
+
+function preloadImage(src) {
+  const img = new Image();
+  img.src = src;
+}
+
+function loadHeroBackgrounds() {
+  let images = [];
+  try {
+    const glob = typeof import.meta !== 'undefined' && import.meta.glob
+      ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
+      : null;
+    if (glob) {
+      images = Object.values(glob)
+        .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
+        .filter(Boolean);
+    }
+  } catch (err) {
+    console.error('Unable to glob hero backgrounds', err);
+  }
+
+  const fallbackImages = [
+    '/src/assets/backgrounds/background.jpg',
+    '/src/assets/backgrounds/background2.jpg',
+  ];
+
+  fallbackImages.forEach((src) => {
+    if (!images.includes(src)) images.push(src);
+  });
+
+  heroBackgroundState.images = Array.from(new Set(images));
+  heroBackgroundState.images.forEach(preloadImage);
+}
+
+function setHeroBackground(index, immediate = false) {
+  if (!heroBackgroundState.images.length || elements.heroBgLayers.length < 2) return;
+
+  const total = heroBackgroundState.images.length;
+  const targetIndex = ((index % total) + total) % total;
+
+  if (heroBackgroundState.isTransitioning && !immediate) {
+    heroBackgroundState.pendingIndex = targetIndex;
+    return;
+  }
+
+  const nextLayerIndex = 1 - heroBackgroundState.activeLayer;
+  const nextLayer = elements.heroBgLayers[nextLayerIndex];
+  const currentLayer = elements.heroBgLayers[heroBackgroundState.activeLayer];
+  const src = heroBackgroundState.images[targetIndex];
+
+  heroBackgroundState.isTransitioning = !immediate;
+  nextLayer.style.backgroundImage = `url('${src}')`;
+
+  if (immediate) {
+    nextLayer.classList.add('visible');
+    currentLayer.classList.remove('visible');
+    heroBackgroundState.activeLayer = nextLayerIndex;
+    heroBackgroundState.currentIndex = targetIndex;
+    heroBackgroundState.isTransitioning = false;
+    heroBackgroundState.pendingIndex = null;
+    return;
+  }
+
+  requestAnimationFrame(() => {
+    nextLayer.classList.add('visible');
+    currentLayer.classList.remove('visible');
+    setTimeout(() => {
+      heroBackgroundState.activeLayer = nextLayerIndex;
+      heroBackgroundState.currentIndex = targetIndex;
+      heroBackgroundState.isTransitioning = false;
+      if (heroBackgroundState.pendingIndex !== null) {
+        const pending = heroBackgroundState.pendingIndex;
+        heroBackgroundState.pendingIndex = null;
+        setHeroBackground(pending);
+      }
+    }, 1700);
+  });
+}
+
+function cycleHeroBackground(manual = false) {
+  if (!heroBackgroundState.images.length) return;
+  const nextIndex = (heroBackgroundState.currentIndex + 1) % heroBackgroundState.images.length;
+  setHeroBackground(nextIndex);
+  if (manual) restartHeroBackgroundInterval();
+}
+
+function restartHeroBackgroundInterval() {
+  if (heroBackgroundState.intervalId) clearInterval(heroBackgroundState.intervalId);
+  if (heroBackgroundState.images.length < 2) return;
+  heroBackgroundState.intervalId = setInterval(() => cycleHeroBackground(false), BACKGROUND_ROTATION_MS);
+}
+
+function initHeroBackgrounds() {
+  loadHeroBackgrounds();
+  if (!heroBackgroundState.images.length || !elements.heroBgLayers.length) return;
+
+  const first = heroBackgroundState.images[0];
+  elements.heroBgLayers.forEach((layer, index) => {
+    layer.style.backgroundImage = `url('${first}')`;
+    layer.classList.toggle('visible', index === 0);
+  });
+  heroBackgroundState.activeLayer = 0;
+  heroBackgroundState.currentIndex = 0;
+  heroBackgroundState.pendingIndex = null;
+  heroBackgroundState.isTransitioning = false;
+  restartHeroBackgroundInterval();
 }
 
 function renderSoundscapes() {
@@ -243,6 +367,14 @@ function syncPlayButtons(isPlaying) {
     elements.heroPlayToggle.textContent = isPlaying ? 'Stop' : 'Play';
   }
   document.body.classList.toggle('is-playing', isPlaying);
+}
+
+function setPlaybackLoading(isLoading) {
+  [elements.heroPlayToggle, elements.togglePlay].forEach((btn) => {
+    if (!btn) return;
+    btn.classList.toggle('is-loading', isLoading);
+    btn.disabled = isLoading;
+  });
 }
 
 function updateEpisodeSummary() {
@@ -821,6 +953,21 @@ async function handleLoadTop() {
   }
 }
 
+async function requestStartPlayback() {
+  if (uiState.isStartingPlayback) return;
+  uiState.isStartingPlayback = true;
+  setPlaybackLoading(true);
+  try {
+    await startPlayback();
+  } catch (err) {
+    console.error(err);
+    updatePlayStatus('Unable to start playback');
+  } finally {
+    uiState.isStartingPlayback = false;
+    setPlaybackLoading(false);
+  }
+}
+
 function attachEvents() {
   elements.addFeedBtn.addEventListener('click', handleAddFeed);
   elements.loadTop.addEventListener('click', handleLoadTop);
@@ -828,7 +975,7 @@ function attachEvents() {
     if (state.isPlaying) {
       stopPlayback();
     } else {
-      startPlayback();
+      requestStartPlayback();
     }
   });
 
@@ -837,7 +984,7 @@ function attachEvents() {
       if (state.isPlaying) {
         stopPlayback();
       } else {
-        startPlayback();
+        requestStartPlayback();
       }
     });
   }
@@ -846,6 +993,10 @@ function attachEvents() {
     elements.scrollControls.addEventListener('click', () => {
       elements.controlsAnchor.scrollIntoView({ behavior: 'smooth' });
     });
+  }
+
+  if (elements.cycleBackground) {
+    elements.cycleBackground.addEventListener('click', () => cycleHeroBackground(true));
   }
 
   if (elements.toggleFeedList) {
@@ -884,6 +1035,7 @@ function attachEvents() {
 
 async function init() {
   renderSoundscapes();
+  initHeroBackgrounds();
   setNoiseLabel(getNoiseProfile(state.selectedNoise).label);
   loadUserFeeds();
   const cachedTop = loadTopFeedCache();
@@ -905,6 +1057,9 @@ async function init() {
   attachEvents();
   syncPlayButtons(false);
   setFeedListVisibility(true);
+  if (elements.sleepMinutes && !elements.sleepMinutes.value) {
+    elements.sleepMinutes.value = 30;
+  }
   if (elements.noiseStatus) {
     elements.noiseStatus.textContent = `Soundscape selected: ${getNoiseProfile(state.selectedNoise).label}`;
   }
