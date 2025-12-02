@@ -10,7 +10,11 @@ const state = {
   lowpass: null,
   convolver: null,
   noiseSource: null,
+  noiseSourceGain: null,
   customNoiseBuffer: null,
+  noiseBuffers: new Map(),
+  selectedNoise: 'pool',
+  topUpdatedAt: null,
   buffers: new Map(),
   failureCounts: new Map(),
   isPlaying: false,
@@ -27,6 +31,14 @@ const state = {
 };
 
 const STORAGE_KEY = 'podcastNoiseUserFeeds';
+const TOP_STORAGE_KEY = 'podcastNoiseTopFeeds';
+
+const NOISE_PROFILES = [
+  { id: 'pool', label: 'Pool', audio: '/src/assets/pool.ogg', art: '/src/assets/pool.png' },
+  { id: 'rain', label: 'Rain', audio: '/src/assets/rain.ogg', art: '/src/assets/rain.png' },
+  { id: 'waves', label: 'Waves', audio: '/src/assets/waves.ogg', art: '/src/assets/waves.png' },
+  { id: 'sepia', label: 'Sepia', audio: '/src/assets/sepia.ogg', art: '/src/assets/sepia.png' },
+];
 
 const elements = {
   loadTop: document.getElementById('loadTop'),
@@ -56,7 +68,33 @@ const elements = {
   noiseFile: document.getElementById('noiseFile'),
   setNoiseFile: document.getElementById('setNoiseFile'),
   resetNoise: document.getElementById('resetNoise'),
+  noiseLabel: document.getElementById('noiseLabel'),
+  soundscapeGrid: document.getElementById('soundscapeGrid'),
+  ghostContainer: document.getElementById('ghostContainer'),
+  topUpdatedAt: document.getElementById('topUpdatedAt'),
 };
+
+function setNoiseLabel(text) {
+  if (elements.noiseLabel) {
+    elements.noiseLabel.textContent = `Noise: ${text}`;
+  }
+}
+
+function renderSoundscapes() {
+  if (!elements.soundscapeGrid) return;
+  elements.soundscapeGrid.innerHTML = '';
+  NOISE_PROFILES.forEach((profile) => {
+    const btn = document.createElement('button');
+    btn.className = `soundscape${state.selectedNoise === profile.id ? ' active' : ''}`;
+    btn.style.backgroundImage = `linear-gradient(180deg, rgba(0,0,0,0.1), rgba(0,0,0,0.5)), url('${profile.art}')`;
+    btn.type = 'button';
+    const label = document.createElement('span');
+    label.textContent = profile.label;
+    btn.appendChild(label);
+    btn.addEventListener('click', () => selectSoundscape(profile.id));
+    elements.soundscapeGrid.appendChild(btn);
+  });
+}
 
 function loadUserFeeds() {
   try {
@@ -75,6 +113,30 @@ function loadUserFeeds() {
 function saveUserFeeds() {
   const userFeeds = state.feeds.filter((f) => f.userAdded).map(({ title, feedUrl }) => ({ title, feedUrl }));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(userFeeds));
+}
+
+function loadTopFeedCache() {
+  try {
+    const raw = localStorage.getItem(TOP_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.feeds)) return null;
+    return { feeds: parsed.feeds, updatedAt: parsed.updatedAt || null };
+  } catch (err) {
+    console.error('Failed to load cached top feeds', err);
+    return null;
+  }
+}
+
+function saveTopFeedCache(feeds) {
+  try {
+    localStorage.setItem(
+      TOP_STORAGE_KEY,
+      JSON.stringify({ feeds, updatedAt: new Date().toISOString() }),
+    );
+  } catch (err) {
+    console.error('Failed to store cached top feeds', err);
+  }
 }
 
 function renderFeeds() {
@@ -104,6 +166,18 @@ function renderFeeds() {
   });
 
   updateEpisodeSummary();
+}
+
+function updateTopUpdatedAt(dateString) {
+  state.topUpdatedAt = dateString || null;
+  if (elements.topUpdatedAt) {
+    elements.topUpdatedAt.textContent = dateString
+      ? `Top podcasts updated ${new Date(dateString).toLocaleString()}`
+      : 'Top podcasts not loaded yet.';
+  }
+  if (elements.loadTop) {
+    elements.loadTop.textContent = dateString ? 'Refresh Top Podcasts' : 'Load Top Podcasts';
+  }
 }
 
 function updatePlayStatus(message) {
@@ -137,6 +211,20 @@ function updateSnippetStatus(extra = '') {
       elements.nextSnippet.textContent = '';
     }
   }
+}
+
+function displayGhost(title) {
+  if (!elements.ghostContainer || !title) return;
+  const ghost = document.createElement('div');
+  ghost.className = 'ghost';
+  ghost.textContent = title;
+  const x = Math.random() * 70 + 10;
+  const y = Math.random() * 60 + 10;
+  ghost.style.left = `${x}%`;
+  ghost.style.top = `${y}%`;
+  ghost.style.animationDuration = `${10 + Math.random() * 6}s`;
+  elements.ghostContainer.appendChild(ghost);
+  setTimeout(() => ghost.remove(), 16000);
 }
 
 function weightedRandomEpisode() {
@@ -233,6 +321,41 @@ function createNoiseBuffer(ctx) {
   return buffer;
 }
 
+function getNoiseProfile(id) {
+  return NOISE_PROFILES.find((profile) => profile.id === id) || NOISE_PROFILES[0];
+}
+
+async function ensureNoiseBuffer(id) {
+  const profile = getNoiseProfile(id);
+  if (!profile) return null;
+  if (state.noiseBuffers.has(profile.id)) return state.noiseBuffers.get(profile.id);
+  if (!state.audioCtx) buildAudioGraph();
+  const resp = await fetch(profile.audio);
+  if (!resp.ok) throw new Error('Failed to load noise file');
+  const arr = await resp.arrayBuffer();
+  const buf = await state.audioCtx.decodeAudioData(arr);
+  state.noiseBuffers.set(profile.id, buf);
+  return buf;
+}
+
+async function selectSoundscape(id) {
+  const profile = getNoiseProfile(id);
+  state.selectedNoise = profile.id;
+  state.customNoiseBuffer = null;
+  setNoiseLabel(profile.label);
+  if (elements.noiseStatus) elements.noiseStatus.textContent = `Soundscape selected: ${profile.label}`;
+  renderSoundscapes();
+  try {
+    const buffer = await ensureNoiseBuffer(profile.id);
+    if (state.isPlaying && buffer) {
+      await startNoise(buffer);
+    }
+  } catch (err) {
+    console.error(err);
+    if (elements.noiseStatus) elements.noiseStatus.textContent = 'Unable to load soundscape';
+  }
+}
+
 function createImpulseResponse(ctx) {
   const duration = 1;
   const decay = 1.8;
@@ -257,17 +380,53 @@ function applyToneAndReverb() {
   state.reverbGain.gain.value = reverbMix;
 }
 
-function startNoise() {
-  const ctx = state.audioCtx;
-  if (state.noiseSource) {
-    try { state.noiseSource.stop(); } catch (e) { /* ignore */ }
+async function getActiveNoiseBuffer() {
+  if (state.customNoiseBuffer) return state.customNoiseBuffer;
+  if (state.selectedNoise) {
+    const selectedBuffer = await ensureNoiseBuffer(state.selectedNoise);
+    if (selectedBuffer) return selectedBuffer;
   }
+  if (!state.audioCtx) buildAudioGraph();
+  return createNoiseBuffer(state.audioCtx);
+}
+
+async function startNoise(bufferOverride = null) {
+  if (!state.audioCtx) buildAudioGraph();
+  const ctx = state.audioCtx;
+  let buffer = bufferOverride;
+  if (!buffer) {
+    try {
+      buffer = await getActiveNoiseBuffer();
+    } catch (err) {
+      console.error('Noise load failed', err);
+      if (elements.noiseStatus) elements.noiseStatus.textContent = 'Falling back to generated noise';
+    }
+  }
+  if (!buffer) buffer = createNoiseBuffer(ctx);
+
   const source = ctx.createBufferSource();
-  source.buffer = state.customNoiseBuffer || createNoiseBuffer(ctx);
+  const fader = ctx.createGain();
+  fader.gain.value = 0;
+  source.buffer = buffer;
   source.loop = true;
-  source.connect(state.noiseGain);
+  source.connect(fader);
+  fader.connect(state.noiseGain);
+
+  const now = ctx.currentTime;
+  fader.gain.linearRampToValueAtTime(1, now + 1.5);
   source.start();
+
+  if (state.noiseSourceGain) {
+    state.noiseSourceGain.gain.cancelScheduledValues(now);
+    state.noiseSourceGain.gain.setValueAtTime(state.noiseSourceGain.gain.value, now);
+    state.noiseSourceGain.gain.linearRampToValueAtTime(0, now + 1.5);
+    try {
+      state.noiseSource.stop(now + 1.6);
+    } catch (e) { /* ignore */ }
+  }
+
   state.noiseSource = source;
+  state.noiseSourceGain = fader;
 }
 
 async function loadCustomNoiseFromUrl(url) {
@@ -320,6 +479,7 @@ async function playOneSnippet() {
     state.diagnostics.snippetSuccesses += 1;
     state.diagnostics.lastSnippetMessage = `Playing "${episode.title}"`;
     state.failureCounts.delete(episode.audioUrl);
+    displayGhost(episode.title);
     updateSnippetStatus();
     return true;
   } catch (err) {
@@ -374,7 +534,10 @@ async function handleCustomNoiseUrl() {
   try {
     await loadCustomNoiseFromUrl(url);
     elements.noiseStatus.textContent = 'Custom noise loaded';
-    if (state.isPlaying) startNoise();
+    state.selectedNoise = null;
+    setNoiseLabel('Custom');
+    renderSoundscapes();
+    if (state.isPlaying) await startNoise();
   } catch (err) {
     console.error(err);
     elements.noiseStatus.textContent = 'Failed to load noise URL';
@@ -388,17 +551,23 @@ async function handleCustomNoiseFile() {
   try {
     await loadCustomNoiseFromFile(file);
     elements.noiseStatus.textContent = 'Custom noise loaded';
-    if (state.isPlaying) startNoise();
+    state.selectedNoise = null;
+    setNoiseLabel(file.name || 'Custom');
+    renderSoundscapes();
+    if (state.isPlaying) await startNoise();
   } catch (err) {
     console.error(err);
     elements.noiseStatus.textContent = 'Failed to load noise file';
   }
 }
 
-function resetNoise() {
+async function resetNoise() {
   state.customNoiseBuffer = null;
-  elements.noiseStatus.textContent = 'Using generated noise';
-  if (state.isPlaying) startNoise();
+  state.selectedNoise = NOISE_PROFILES[0].id;
+  setNoiseLabel(getNoiseProfile(state.selectedNoise).label);
+  elements.noiseStatus.textContent = `Soundscape selected: ${getNoiseProfile(state.selectedNoise).label}`;
+  renderSoundscapes();
+  if (state.isPlaying) await startNoise();
 }
 
 function startTimer(minutes) {
@@ -441,7 +610,7 @@ async function startPlayback() {
 
   state.noiseGain.gain.value = parseFloat(elements.noiseLevel.value);
   state.snippetGain.gain.value = parseFloat(elements.snippetLevel.value);
-  startNoise();
+  await startNoise();
   state.isPlaying = true;
   updatePlayStatus('Playing');
   elements.togglePlay.textContent = 'Stop';
@@ -488,6 +657,19 @@ function updateEpisodes(feed, parsed) {
   updateEpisodeSummary();
 }
 
+async function addTopFeeds(feeds) {
+  const newFeeds = feeds
+    .filter((feed) => !state.feeds.some((f) => f.feedUrl === feed.feedUrl))
+    .map((feed) => ({ ...feed, userAdded: false }));
+
+  newFeeds.forEach((feed) => state.feeds.push(feed));
+  renderFeeds();
+  for (const feed of newFeeds) {
+    await fetchFeed(feed);
+  }
+  return newFeeds.length;
+}
+
 async function fetchFeed(feed) {
   try {
     const resp = await fetch(`/api/fetchFeed?url=${encodeURIComponent(feed.feedUrl)}`);
@@ -528,15 +710,12 @@ async function handleLoadTop() {
     const payload = await resp.json();
     const feeds = Array.isArray(payload) ? payload : payload.feeds || [];
     const warning = Array.isArray(payload) ? null : payload.warning;
-    const newFeeds = feeds.filter((feed) => !state.feeds.some((f) => f.feedUrl === feed.feedUrl));
-    newFeeds.forEach((feed) => state.feeds.push({ ...feed, userAdded: false }));
-    renderFeeds();
-    for (const feed of newFeeds) {
-      await fetchFeed(feed);
-    }
+    const addedCount = await addTopFeeds(feeds);
+    saveTopFeedCache(feeds);
+    updateTopUpdatedAt(new Date().toISOString());
     const warningSuffix = warning ? ` (${warning})` : '';
-    const loadedMessage = newFeeds.length
-      ? `Loaded ${newFeeds.length} feeds${warningSuffix}.`
+    const loadedMessage = addedCount
+      ? `Loaded ${addedCount} feeds${warningSuffix}.`
       : `No new feeds found${warningSuffix}.`;
     elements.feedStatus.textContent = loadedMessage;
   } catch (err) {
@@ -585,11 +764,24 @@ function attachEvents() {
 }
 
 async function init() {
+  renderSoundscapes();
+  setNoiseLabel(getNoiseProfile(state.selectedNoise).label);
   loadUserFeeds();
+  const cachedTop = loadTopFeedCache();
+  if (cachedTop?.feeds?.length) {
+    cachedTop.feeds.forEach((feed) => {
+      if (!state.feeds.some((f) => f.feedUrl === feed.feedUrl)) {
+        state.feeds.push({ ...feed, userAdded: false });
+      }
+    });
+    updateTopUpdatedAt(cachedTop.updatedAt);
+  } else {
+    updateTopUpdatedAt(null);
+  }
   renderFeeds();
   attachEvents();
   if (elements.noiseStatus) {
-    elements.noiseStatus.textContent = 'Using generated noise';
+    elements.noiseStatus.textContent = `Soundscape selected: ${getNoiseProfile(state.selectedNoise).label}`;
   }
   updateEpisodeSummary();
   updateSnippetStatus();
@@ -598,6 +790,10 @@ async function init() {
       await fetchFeed(feed);
     }
   }
+  if (cachedTop?.feeds?.length && elements.feedStatus) {
+    elements.feedStatus.textContent = 'Loaded cached top podcasts';
+  }
+  await ensureNoiseBuffer(state.selectedNoise);
 }
 
 init();

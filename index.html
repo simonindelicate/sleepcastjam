@@ -5,49 +5,140 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Podcast Noise</title>
   <style>
+    :root {
+      --panel: #0f172a;
+      --panel-raised: #1e293b;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --button: #3b82f6;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
+      font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+      background: var(--panel);
+      color: var(--text);
       margin: 0;
-      padding: 0;
+    }
+    .hero {
+      position: relative;
+      min-height: 60vh;
+      width: 100%;
+      background-image: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.12), transparent 25%),
+        radial-gradient(circle at 80% 30%, rgba(94, 234, 212, 0.12), transparent 28%),
+        linear-gradient(180deg, rgba(15,23,42,0.25) 0%, rgba(15,23,42,0.6) 65%, rgba(15,23,42,0.9) 100%);
+      background-size: cover;
+      background-position: center;
+      background-color: #222;
+      overflow: hidden;
       display: flex;
+      align-items: center;
       justify-content: center;
+      border-bottom: 2px solid rgba(148, 163, 184, 0.15);
+    }
+    .hero-overlay {
+      position: relative;
+      width: min(1100px, 90vw);
+      padding: 48px;
+      backdrop-filter: blur(6px);
+      background: linear-gradient(120deg, rgba(15,23,42,0.8), rgba(15,23,42,0.6));
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 24px;
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+    }
+    .hero h1 {
+      margin: 0 0 8px 0;
+      font-size: 32px;
+      letter-spacing: -0.5px;
+    }
+    .hero p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 680px;
+      line-height: 1.6;
+    }
+    .hero-meta {
+      margin-top: 32px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-end;
+    }
+    .noise-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #e0f2fe;
+      border: 1px solid rgba(56, 189, 248, 0.5);
+      font-weight: 600;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .ghost-layer {
+      position: relative;
+      flex: 1;
+      min-height: 160px;
+      overflow: hidden;
+    }
+    #ghostContainer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .ghost {
+      position: absolute;
+      color: rgba(226, 232, 240, 0.55);
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-shadow: 0 0 18px rgba(56, 189, 248, 0.25);
+      animation: ghostFade 12s ease-in-out forwards;
+      white-space: nowrap;
+    }
+    @keyframes ghostFade {
+      0% { opacity: 0; transform: translateY(10px) scale(0.98); }
+      15% { opacity: 1; transform: translateY(0) scale(1); }
+      70% { opacity: 0.85; }
+      100% { opacity: 0; transform: translateY(-8px) scale(1.02); }
     }
     main {
-      max-width: 960px;
+      max-width: 1100px;
       width: 100%;
-      padding: 24px;
-    }
-    h1, h2 {
-      color: #f8fafc;
+      padding: 32px 24px 60px;
+      margin: -60px auto 0;
+      position: relative;
+      z-index: 2;
     }
     section {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 16px;
+      background: var(--panel-raised);
+      border-radius: 16px;
+      padding: 20px;
       margin-bottom: 16px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(148, 163, 184, 0.1);
     }
+    h2 { color: #f8fafc; margin-top: 0; }
     button {
-      background: #3b82f6;
+      background: var(--button);
       border: none;
       color: #fff;
       padding: 10px 14px;
-      border-radius: 8px;
+      border-radius: 10px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 700;
+      box-shadow: 0 8px 16px rgba(59, 130, 246, 0.35);
     }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     input, slider, select {
-      background: #0f172a;
+      background: var(--panel);
       border: 1px solid #334155;
-      color: #e2e8f0;
+      color: var(--text);
       padding: 8px;
-      border-radius: 6px;
+      border-radius: 8px;
     }
     .row {
       display: flex;
@@ -55,20 +146,17 @@
       flex-wrap: wrap;
       align-items: center;
     }
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 8px 0 0 0;
-    }
+    .spaced { justify-content: space-between; }
+    ul { list-style: none; padding: 0; margin: 8px 0 0 0; }
     li {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 8px;
       border: 1px solid #334155;
-      border-radius: 8px;
+      border-radius: 10px;
       margin-bottom: 6px;
-      background: #0f172a;
+      background: var(--panel);
     }
     .badge {
       font-size: 12px;
@@ -77,32 +165,75 @@
       background: #334155;
       margin-left: 8px;
     }
-    .status {
-      font-weight: 600;
-      margin-top: 6px;
+    .status { font-weight: 600; margin-top: 6px; }
+    label { display: block; margin-top: 8px; margin-bottom: 4px; font-weight: 600; }
+    .small { font-size: 12px; color: var(--muted); }
+    .soundscape-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin: 12px 0;
     }
-    label {
-      display: block;
-      margin-top: 8px;
-      margin-bottom: 4px;
-      font-weight: 600;
+    .soundscape {
+      position: relative;
+      height: 140px;
+      border-radius: 16px;
+      border: 2px solid transparent;
+      overflow: hidden;
+      padding: 0;
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-start;
+      color: #fff;
+      text-shadow: 0 8px 18px rgba(0, 0, 0, 0.5);
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
     }
-    .small {
-      font-size: 12px;
-      color: #94a3b8;
+    .soundscape span {
+      display: inline-block;
+      margin: 12px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.45);
+      font-weight: 700;
+    }
+    .soundscape:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(0,0,0,0.35); }
+    .soundscape.active { border-color: rgba(56, 189, 248, 0.9); box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.25);
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Podcast Noise Machine</h1>
-    <p class="small">Ambient podcast babble with white noise and a sleep timer.</p>
+  <div class="hero">
+    <div class="hero-overlay">
+      <div>
+        <div class="pill">Podcast Noise Machine</div>
+        <h1>Sleepcast Jam</h1>
+        <p>Ambient podcast babble blended with soft noise layers and a sleep timer. Set your mix, let the voices drift, and fade into rest.</p>
+      </div>
+      <div class="hero-meta">
+        <div class="noise-chip" id="noiseLabel">Noise: Pool</div>
+        <div class="ghost-layer">
+          <div id="ghostContainer"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <main>
     <section>
       <h2>Feeds</h2>
-      <div class="row" style="margin-bottom: 12px;">
-        <button id="loadTop">Load Top Podcasts</button>
-        <span id="feedStatus" class="small"></span>
+      <div class="row spaced" style="margin-bottom: 12px;">
+        <div class="row" style="gap: 12px;">
+          <button id="loadTop">Load Top Podcasts</button>
+          <span id="feedStatus" class="small"></span>
+        </div>
+        <span id="topUpdatedAt" class="small"></span>
       </div>
       <div class="row" style="margin-bottom: 12px;">
         <input type="url" id="feedUrl" placeholder="Add RSS URL" style="flex:1; min-width:240px;" />
@@ -121,6 +252,10 @@
       <div class="small" id="episodeSummary">No episodes loaded.</div>
       <div class="small" id="snippetStatus">Waiting to start.</div>
       <div class="small" id="nextSnippet"></div>
+
+      <label class="row" style="margin-top: 12px; align-items: center; gap: 12px;">Soundscapes</label>
+      <div class="soundscape-grid" id="soundscapeGrid"></div>
+
       <label for="noiseLevel">Noise level</label>
       <input type="range" id="noiseLevel" min="0" max="1" step="0.01" value="0.4" />
       <div class="small">Use your own white noise loop</div>
