@@ -137,6 +137,15 @@ function setHeroTimer(text) {
   }
 }
 
+function formatRemainingTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
 function preloadImage(src) {
   const img = new Image();
   img.src = src;
@@ -805,19 +814,20 @@ function startTimer(minutes) {
   if (!minutes) return;
   const end = Date.now() + minutes * 60 * 1000;
   state.endTime = end;
-  const label = `Time remaining: ${minutes.toFixed(1)} min`;
+  const initialRemaining = formatRemainingTime(minutes * 60 * 1000);
+  const label = `Time remaining: ${initialRemaining}`;
   elements.timerDisplay.textContent = label;
-  setHeroTimer(label);
+  setHeroTimer(initialRemaining);
   state.timerIntervalId = setInterval(() => {
     const remaining = end - Date.now();
     if (remaining <= 0) {
       stopPlayback(true);
       return;
     }
-    const mins = remaining / 60000;
-    const tickLabel = `Time remaining: ${mins.toFixed(1)} min`;
+    const tickRemaining = formatRemainingTime(remaining);
+    const tickLabel = `Time remaining: ${tickRemaining}`;
     elements.timerDisplay.textContent = tickLabel;
-    setHeroTimer(tickLabel);
+    setHeroTimer(tickRemaining);
   }, 1000);
 }
 
