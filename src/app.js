@@ -89,8 +89,19 @@ const elements = {
 };
 
 const uiState = {
-  feedListCollapsed: false,
+  feedListCollapsed: true,
 };
+
+function pruneTitle(rawTitle) {
+  if (!rawTitle) return rawTitle;
+  let title = String(rawTitle).trim();
+  title = title.replace(/^[^:]*:\s*/, '');
+  title = title.replace(/\bepisode\b/gi, '');
+  title = title.replace(/\d+/g, '');
+  title = title.replace(/[–—-]+/g, ' ');
+  title = title.replace(/\s{2,}/g, ' ').trim();
+  return title || rawTitle.trim();
+}
 
 function setNoiseLabel(text) {
   if (elements.noiseLabel) {
@@ -131,7 +142,9 @@ function loadUserFeeds() {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
-        parsed.forEach((feed) => state.feeds.push({ ...feed, userAdded: true }));
+        parsed.forEach((feed) => {
+          state.feeds.push({ ...feed, title: pruneTitle(feed.title) || feed.feedUrl, userAdded: true });
+        });
       }
     }
   } catch (err) {
@@ -173,7 +186,7 @@ function renderFeeds() {
   state.feeds.forEach((feed, index) => {
     const li = document.createElement('li');
     const info = document.createElement('div');
-    info.textContent = feed.title || feed.feedUrl;
+    info.textContent = pruneTitle(feed.title) || feed.feedUrl;
     const badge = document.createElement('span');
     badge.className = 'badge';
     badge.textContent = feed.userAdded ? 'User' : 'Top';
@@ -229,6 +242,7 @@ function syncPlayButtons(isPlaying) {
   if (elements.heroPlayToggle) {
     elements.heroPlayToggle.textContent = isPlaying ? 'Stop' : 'Play';
   }
+  document.body.classList.toggle('is-playing', isPlaying);
 }
 
 function updateEpisodeSummary() {
@@ -264,7 +278,7 @@ function displayGhost(title) {
   if (!elements.ghostContainer || !title) return;
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
-  ghost.textContent = title;
+  ghost.textContent = pruneTitle(title) || title;
   const centered = (spread, bias = 50) => {
     const u = Math.random() || 1e-6;
     const v = Math.random();
@@ -274,7 +288,7 @@ function displayGhost(title) {
   };
   const x = centered(14);
   const y = centered(12);
-  const size = 32 + Math.random() * 54;
+  const size = 18 + Math.random() * 34;
   const color = GHOST_COLORS[Math.floor(Math.random() * GHOST_COLORS.length)];
   ghost.style.left = `${x}%`;
   ghost.style.top = `${y}%`;
@@ -706,6 +720,7 @@ function stopPlayback(fromTimer = false) {
   state.isPlaying = false;
   state.diagnostics.nextSnippetAt = null;
   updateSnippetStatus();
+  document.body.classList.remove('is-playing');
   setTimeout(() => {
     syncPlayButtons(false);
     updatePlayStatus(fromTimer ? 'Timer ended' : 'Stopped');
@@ -715,7 +730,13 @@ function stopPlayback(fromTimer = false) {
 function updateEpisodes(feed, parsed) {
   parsed.episodes.forEach((ep) => {
     if (!state.episodes.some((existing) => existing.audioUrl === ep.audioUrl)) {
-      state.episodes.push({ ...ep, feedUrl: feed.feedUrl, userAdded: feed.userAdded });
+      const cleanedTitle = pruneTitle(ep.title);
+      state.episodes.push({
+        ...ep,
+        title: cleanedTitle || ep.title,
+        feedUrl: feed.feedUrl,
+        userAdded: feed.userAdded,
+      });
     }
   });
   updateEpisodeSummary();
@@ -724,7 +745,11 @@ function updateEpisodes(feed, parsed) {
 async function addTopFeeds(feeds) {
   const newFeeds = feeds
     .filter((feed) => !state.feeds.some((f) => f.feedUrl === feed.feedUrl))
-    .map((feed) => ({ ...feed, userAdded: false }));
+    .map((feed) => ({
+      ...feed,
+      title: pruneTitle(feed.title) || feed.feedUrl,
+      userAdded: false,
+    }));
 
   newFeeds.forEach((feed) => state.feeds.push(feed));
   renderFeeds();
@@ -742,7 +767,11 @@ async function fetchFeed(feed) {
       throw new Error(errBody.message || `Feed request failed (${resp.status})`);
     }
     const parsed = await resp.json();
-    const withTitle = { ...feed, title: feed.title || parsed.title };
+    const parsedTitle = pruneTitle(parsed.title);
+    const withTitle = {
+      ...feed,
+      title: pruneTitle(feed.title) || parsedTitle || feed.feedUrl,
+    };
     const existing = state.feeds.find((f) => f.feedUrl === feed.feedUrl);
     if (!existing) state.feeds.push(withTitle);
     updateEpisodes(withTitle, parsed);
@@ -773,9 +802,13 @@ async function handleLoadTop() {
     if (!resp.ok) throw new Error('Top list failed');
     const payload = await resp.json();
     const feeds = Array.isArray(payload) ? payload : payload.feeds || [];
+    const normalizedFeeds = feeds.map((feed) => ({
+      ...feed,
+      title: pruneTitle(feed.title) || feed.feedUrl,
+    }));
     const warning = Array.isArray(payload) ? null : payload.warning;
-    const addedCount = await addTopFeeds(feeds);
-    saveTopFeedCache(feeds);
+    const addedCount = await addTopFeeds(normalizedFeeds);
+    saveTopFeedCache(normalizedFeeds);
     updateTopUpdatedAt(new Date().toISOString());
     const warningSuffix = warning ? ` (${warning})` : '';
     const loadedMessage = addedCount
@@ -857,7 +890,11 @@ async function init() {
   if (cachedTop?.feeds?.length) {
     cachedTop.feeds.forEach((feed) => {
       if (!state.feeds.some((f) => f.feedUrl === feed.feedUrl)) {
-        state.feeds.push({ ...feed, userAdded: false });
+        state.feeds.push({
+          ...feed,
+          title: pruneTitle(feed.title) || feed.feedUrl,
+          userAdded: false,
+        });
       }
     });
     updateTopUpdatedAt(cachedTop.updatedAt);
@@ -867,7 +904,7 @@ async function init() {
   renderFeeds();
   attachEvents();
   syncPlayButtons(false);
-  setFeedListVisibility(false);
+  setFeedListVisibility(true);
   if (elements.noiseStatus) {
     elements.noiseStatus.textContent = `Soundscape selected: ${getNoiseProfile(state.selectedNoise).label}`;
   }
