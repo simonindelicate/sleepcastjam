@@ -144,6 +144,11 @@ function preloadImage(src) {
 
 function loadHeroBackgrounds() {
   const images = new Set();
+  const addIfValid = (src) => {
+    if (src && typeof src === 'string') {
+      images.add(src);
+    }
+  };
   try {
     const glob = typeof import.meta !== 'undefined' && import.meta.glob
       ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
@@ -151,8 +156,7 @@ function loadHeroBackgrounds() {
     if (glob) {
       Object.values(glob)
         .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
-        .filter(Boolean)
-        .forEach((src) => images.add(src));
+        .forEach(addIfValid);
     }
   } catch (err) {
     console.error('Unable to glob hero backgrounds', err);
@@ -166,11 +170,25 @@ function loadHeroBackgrounds() {
       ctx.keys().forEach((key) => {
         const mod = ctx(key);
         const src = typeof mod === 'string' ? mod : mod?.default;
-        if (src) images.add(src);
+        addIfValid(src);
       });
     }
   } catch (err) {
     console.error('Unable to load hero backgrounds via require.context', err);
+  }
+
+  if (!images.size) {
+    try {
+      const base = new URL('./assets/backgrounds/', import.meta.url).pathname;
+      ['background.jpg', 'background2.jpg', 'background3.jpg'].forEach((file) => {
+        addIfValid(`${base}${file}`);
+      });
+      if (images.size) {
+        console.warn('Using fallback hero backgrounds; dynamic discovery not available.');
+      }
+    } catch (err) {
+      console.error('Unable to resolve fallback hero backgrounds', err);
+    }
   }
 
   heroBackgroundState.images = Array.from(images);
