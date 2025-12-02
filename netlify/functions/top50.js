@@ -1,6 +1,15 @@
 const TOP_FEED_URL = 'https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json';
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
 
+// Helpful for local development when Apple endpoints are unreachable
+const FALLBACK_FEEDS = [
+  { title: 'The Daily', feedUrl: 'https://feeds.simplecast.com/54nAGcIl' },
+  { title: 'Stuff You Should Know', feedUrl: 'https://feeds.megaphone.fm/stuffyoushouldknow' },
+  { title: 'Radiolab', feedUrl: 'https://feeds.wnyc.org/radiolab' },
+  { title: '99% Invisible', feedUrl: 'https://feeds.simplecast.com/BqbsxVfO' },
+  { title: 'This American Life', feedUrl: 'https://feeds.thisamericanlife.org/talpodcast' },
+];
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -17,7 +26,12 @@ exports.handler = async (event) => {
   }
 
   try {
-    const response = await fetch(TOP_FEED_URL);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const response = await fetch(TOP_FEED_URL, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
       throw new Error(`Failed to fetch top feed: ${response.status}`);
     }
@@ -48,20 +62,27 @@ exports.handler = async (event) => {
 
     const feeds = resolved.filter(Boolean);
 
-    return {
-      statusCode: 200,
-      headers: {
-        ...corsHeaders,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(feeds),
-    };
+    if (feeds.length) {
+      return {
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(feeds),
+      };
+    }
+
+    throw new Error('No feeds resolved');
   } catch (error) {
     console.error('top50 error', error);
     return {
-      statusCode: 500,
-      headers: corsHeaders,
-      body: JSON.stringify({ message: 'Unable to load top podcasts' }),
+      statusCode: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feeds: FALLBACK_FEEDS,
+        warning: 'Using fallback list because the Apple API was unreachable.',
+      }),
     };
   }
 };

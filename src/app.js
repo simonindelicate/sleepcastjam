@@ -331,14 +331,20 @@ async function handleLoadTop() {
   try {
     const resp = await fetch('/api/top50');
     if (!resp.ok) throw new Error('Top list failed');
-    const feeds = await resp.json();
+    const payload = await resp.json();
+    const feeds = Array.isArray(payload) ? payload : payload.feeds || [];
+    const warning = Array.isArray(payload) ? null : payload.warning;
     const newFeeds = feeds.filter((feed) => !state.feeds.some((f) => f.feedUrl === feed.feedUrl));
     newFeeds.forEach((feed) => state.feeds.push({ ...feed, userAdded: false }));
     renderFeeds();
     for (const feed of newFeeds) {
       await fetchFeed(feed);
     }
-    elements.feedStatus.textContent = `Loaded ${newFeeds.length} feeds.`;
+    const warningSuffix = warning ? ` (${warning})` : '';
+    const loadedMessage = newFeeds.length
+      ? `Loaded ${newFeeds.length} feeds${warningSuffix}.`
+      : `No new feeds found${warningSuffix}.`;
+    elements.feedStatus.textContent = loadedMessage;
   } catch (err) {
     console.error(err);
     elements.feedStatus.textContent = 'Failed to load top podcasts';
