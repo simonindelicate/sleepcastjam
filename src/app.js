@@ -287,7 +287,10 @@ async function loadCustomNoiseFromFile(file) {
 async function loadAudioBuffer(url) {
   if (state.buffers.has(url)) return state.buffers.get(url);
   const resp = await fetch(proxiedAudioUrl(url));
-  if (!resp.ok) throw new Error(`audio fetch failed (${resp.status})`);
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => '');
+    throw new Error(`audio fetch failed (${resp.status}): ${detail.slice(0, 140)}`);
+  }
   const arrayBuf = await resp.arrayBuffer();
   const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
   state.buffers.set(url, audioBuf);
