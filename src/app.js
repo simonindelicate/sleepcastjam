@@ -14,6 +14,12 @@ const state = {
   snippetTimeoutId: null,
   timerIntervalId: null,
   endTime: null,
+  diagnostics: {
+    snippetAttempts: 0,
+    snippetSuccesses: 0,
+    lastSnippetMessage: 'Waiting to start.',
+    nextSnippetAt: null,
+  },
 };
 
 const STORAGE_KEY = 'podcastNoiseUserFeeds';
@@ -31,6 +37,9 @@ const elements = {
   snippetLevel: document.getElementById('snippetLevel'),
   sleepMinutes: document.getElementById('sleepMinutes'),
   timerDisplay: document.getElementById('timerDisplay'),
+  episodeSummary: document.getElementById('episodeSummary'),
+  snippetStatus: document.getElementById('snippetStatus'),
+  nextSnippet: document.getElementById('nextSnippet'),
   noiseStatus: document.getElementById('noiseStatus'),
   noiseUrl: document.getElementById('noiseUrl'),
   setNoiseUrl: document.getElementById('setNoiseUrl'),
@@ -83,10 +92,39 @@ function renderFeeds() {
     }
     elements.feedList.appendChild(li);
   });
+
+  updateEpisodeSummary();
 }
 
 function updatePlayStatus(message) {
   elements.playStatus.textContent = message;
+}
+
+function updateEpisodeSummary() {
+  const total = state.episodes.length;
+  const user = state.episodes.filter((ep) => ep.userAdded).length;
+  const top = total - user;
+  if (elements.episodeSummary) {
+    elements.episodeSummary.textContent = total
+      ? `Episodes ready: ${total} (Your feeds: ${user}, Top feeds: ${top}).`
+      : 'No episodes loaded yet. Add a feed or load the Top list.';
+  }
+}
+
+function updateSnippetStatus(extra = '') {
+  const { snippetAttempts, snippetSuccesses, lastSnippetMessage, nextSnippetAt } = state.diagnostics;
+  if (elements.snippetStatus) {
+    const status = `Snippets tried: ${snippetAttempts}, played: ${snippetSuccesses}. ${lastSnippetMessage}`;
+    elements.snippetStatus.textContent = status + (extra ? ` ${extra}` : '');
+  }
+  if (elements.nextSnippet) {
+    if (state.isPlaying && nextSnippetAt) {
+      const secs = Math.max(0, Math.round((nextSnippetAt - Date.now()) / 1000));
+      elements.nextSnippet.textContent = `Next snippet scheduled in ~${secs}s.`;
+    } else {
+      elements.nextSnippet.textContent = '';
+    }
+  }
 }
 
 function weightedRandomEpisode() {
@@ -205,6 +243,7 @@ async function playOneSnippet() {
   if (!state.isPlaying || !state.episodes.length) return;
   const episode = weightedRandomEpisode();
   if (!episode) return;
+  state.diagnostics.snippetAttempts += 1;
   try {
     const buffer = await loadAudioBuffer(episode.audioUrl);
     const snippetLength = randomBetween(15, 25);
@@ -215,14 +254,20 @@ async function playOneSnippet() {
     const maxStart = Math.max(buffer.duration - snippetLength, 0);
     const offset = maxStart > 0 ? Math.random() * maxStart : 0;
     source.start(ctx.currentTime, offset, snippetLength);
+    state.diagnostics.snippetSuccesses += 1;
+    state.diagnostics.lastSnippetMessage = `Playing "${episode.title}"`;
   } catch (err) {
     console.warn('Snippet failed', err);
+    state.diagnostics.lastSnippetMessage = `Snippet failed: ${err?.message || err}`;
   }
+  updateSnippetStatus();
 }
 
 function scheduleNextSnippet() {
   if (!state.isPlaying) return;
   const gapSeconds = randomBetween(10, 30);
+  state.diagnostics.nextSnippetAt = Date.now() + gapSeconds * 1000;
+  updateSnippetStatus();
   state.snippetTimeoutId = setTimeout(async () => {
     await playOneSnippet();
     scheduleNextSnippet();
@@ -301,6 +346,11 @@ async function startPlayback() {
     updatePlayStatus('No episodes loaded');
     return;
   }
+  state.diagnostics.snippetAttempts = 0;
+  state.diagnostics.snippetSuccesses = 0;
+  state.diagnostics.lastSnippetMessage = 'Starting playback...';
+  state.diagnostics.nextSnippetAt = null;
+  updateSnippetStatus();
   if (!state.audioCtx) buildAudioGraph();
   const ctx = state.audioCtx;
   await ctx.resume();
@@ -341,6 +391,8 @@ function stopPlayback(fromTimer = false) {
   stopSnippets();
   stopTimer();
   state.isPlaying = false;
+  state.diagnostics.nextSnippetAt = null;
+  updateSnippetStatus();
   setTimeout(() => {
     elements.togglePlay.textContent = 'Start';
     updatePlayStatus(fromTimer ? 'Timer ended' : 'Stopped');
@@ -353,12 +405,16 @@ function updateEpisodes(feed, parsed) {
       state.episodes.push({ ...ep, feedUrl: feed.feedUrl, userAdded: feed.userAdded });
     }
   });
+  updateEpisodeSummary();
 }
 
 async function fetchFeed(feed) {
   try {
     const resp = await fetch(`/api/fetchFeed?url=${encodeURIComponent(feed.feedUrl)}`);
-    if (!resp.ok) throw new Error('Feed request failed');
+    if (!resp.ok) {
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.message || `Feed request failed (${resp.status})`);
+    }
     const parsed = await resp.json();
     const withTitle = { ...feed, title: feed.title || parsed.title };
     const existing = state.feeds.find((f) => f.feedUrl === feed.feedUrl);
@@ -367,7 +423,8 @@ async function fetchFeed(feed) {
     renderFeeds();
   } catch (err) {
     console.error('Feed load error', err);
-    elements.addStatus.textContent = 'Unable to load feed';
+    elements.addStatus.textContent = `Unable to load feed: ${err.message}`;
+    updateSnippetStatus('No episodes yet – add a working feed.');
   }
 }
 
@@ -443,6 +500,8 @@ async function init() {
   if (elements.noiseStatus) {
     elements.noiseStatus.textContent = 'Using generated noise';
   }
+  updateEpisodeSummary();
+  updateSnippetStatus();
   if (state.feeds.length) {
     for (const feed of state.feeds) {
       await fetchFeed(feed);
