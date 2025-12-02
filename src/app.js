@@ -59,6 +59,7 @@ const elements = {
   reverbMix: document.getElementById('reverbMix'),
   sleepMinutes: document.getElementById('sleepMinutes'),
   timerDisplay: document.getElementById('timerDisplay'),
+  heroTimer: document.getElementById('heroTimer'),
   episodeSummary: document.getElementById('episodeSummary'),
   snippetStatus: document.getElementById('snippetStatus'),
   nextSnippet: document.getElementById('nextSnippet'),
@@ -77,6 +78,17 @@ const elements = {
 function setNoiseLabel(text) {
   if (elements.noiseLabel) {
     elements.noiseLabel.textContent = `Noise: ${text}`;
+  }
+}
+
+function setHeroTimer(text) {
+  if (!elements.heroTimer) return;
+  if (text) {
+    elements.heroTimer.textContent = text;
+    elements.heroTimer.style.display = 'inline-flex';
+  } else {
+    elements.heroTimer.textContent = '';
+    elements.heroTimer.style.display = 'none';
   }
 }
 
@@ -218,10 +230,12 @@ function displayGhost(title) {
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.textContent = title;
-  const x = Math.random() * 70 + 10;
-  const y = Math.random() * 60 + 10;
+  const x = Math.random() * 120 - 10;
+  const y = Math.random() * 110 - 5;
+  const size = 42 + Math.random() * 36;
   ghost.style.left = `${x}%`;
   ghost.style.top = `${y}%`;
+  ghost.style.fontSize = `${size}px`;
   ghost.style.animationDuration = `${10 + Math.random() * 6}s`;
   elements.ghostContainer.appendChild(ghost);
   setTimeout(() => ghost.remove(), 16000);
@@ -525,6 +539,7 @@ function stopTimer() {
   }
   state.endTime = null;
   elements.timerDisplay.textContent = '';
+  setHeroTimer('');
 }
 
 async function handleCustomNoiseUrl() {
@@ -574,7 +589,9 @@ function startTimer(minutes) {
   if (!minutes) return;
   const end = Date.now() + minutes * 60 * 1000;
   state.endTime = end;
-  elements.timerDisplay.textContent = `Time remaining: ${minutes.toFixed(1)} min`;
+  const label = `Time remaining: ${minutes.toFixed(1)} min`;
+  elements.timerDisplay.textContent = label;
+  setHeroTimer(label);
   state.timerIntervalId = setInterval(() => {
     const remaining = end - Date.now();
     if (remaining <= 0) {
@@ -582,7 +599,9 @@ function startTimer(minutes) {
       return;
     }
     const mins = remaining / 60000;
-    elements.timerDisplay.textContent = `Time remaining: ${mins.toFixed(1)} min`;
+    const tickLabel = `Time remaining: ${mins.toFixed(1)} min`;
+    elements.timerDisplay.textContent = tickLabel;
+    setHeroTimer(tickLabel);
   }, 1000);
 }
 
