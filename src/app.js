@@ -33,6 +33,12 @@ const state = {
 const STORAGE_KEY = 'podcastNoiseUserFeeds';
 const TOP_STORAGE_KEY = 'podcastNoiseTopFeeds';
 
+const TOP_GENRES = {
+  arts: '1301',
+  business: '1321',
+  music: '1310',
+};
+
 const NOISE_PROFILES = [
   { id: 'pool', label: 'Pool', audio: '/src/assets/pool.ogg', art: '/src/assets/pool.png' },
   { id: 'rain', label: 'Rain', audio: '/src/assets/rain.ogg', art: '/src/assets/rain.png' },
@@ -50,6 +56,10 @@ const GHOST_COLORS = [
 
 const elements = {
   loadTop: document.getElementById('loadTop'),
+  loadTopUk: document.getElementById('loadTopUk'),
+  loadTopArts: document.getElementById('loadTopArts'),
+  loadTopBusiness: document.getElementById('loadTopBusiness'),
+  loadTopMusic: document.getElementById('loadTopMusic'),
   feedStatus: document.getElementById('feedStatus'),
   addFeedBtn: document.getElementById('addFeed'),
   feedUrlInput: document.getElementById('feedUrl'),
@@ -445,15 +455,10 @@ function displayGhost(title) {
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.textContent = pruneTitle(title) || title;
-  const centered = (spread, bias = 50) => {
-    const u = Math.random() || 1e-6;
-    const v = Math.random();
-    const gaussian = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    const value = bias + gaussian * spread;
-    return Math.min(110, Math.max(-10, value));
-  };
-  const x = centered(14);
-  const y = centered(12);
+  const edgeBias = Math.random() < 0.5;
+  const randomSpread = (min, max) => Math.random() * (max - min) + min;
+  const x = edgeBias ? randomSpread(4, 48) : randomSpread(52, 96);
+  const y = randomSpread(4, 94);
   const size = 18 + Math.random() * 34;
   const color = GHOST_COLORS[Math.floor(Math.random() * GHOST_COLORS.length)];
   ghost.style.left = `${x}%`;
@@ -962,10 +967,21 @@ async function handleAddFeed() {
   elements.feedUrlInput.value = '';
 }
 
-async function handleLoadTop() {
-  elements.feedStatus.textContent = 'Fetching top podcasts...';
+async function handleLoadTop(options = {}) {
+  const {
+    country = 'us',
+    genreId = '',
+    label = 'Top podcasts',
+  } = options;
+
+  const params = new URLSearchParams();
+  if (country) params.set('country', country);
+  if (genreId) params.set('genre', genreId);
+  const query = params.toString();
+
+  elements.feedStatus.textContent = `Fetching ${label}...`;
   try {
-    const resp = await fetch('/api/top50');
+    const resp = await fetch(`/api/top50${query ? `?${query}` : ''}`);
     if (!resp.ok) throw new Error('Top list failed');
     const payload = await resp.json();
     const feeds = Array.isArray(payload) ? payload : payload.feeds || [];
@@ -979,12 +995,12 @@ async function handleLoadTop() {
     updateTopUpdatedAt(new Date().toISOString());
     const warningSuffix = warning ? ` (${warning})` : '';
     const loadedMessage = addedCount
-      ? `Loaded ${addedCount} feeds${warningSuffix}.`
-      : `No new feeds found${warningSuffix}.`;
+      ? `Loaded ${addedCount} feeds${warningSuffix} (${label}).`
+      : `No new feeds found${warningSuffix} (${label}).`;
     elements.feedStatus.textContent = loadedMessage;
   } catch (err) {
     console.error(err);
-    elements.feedStatus.textContent = 'Failed to load top podcasts';
+    elements.feedStatus.textContent = `Failed to load ${label}`;
   }
 }
 
@@ -1004,8 +1020,18 @@ async function requestStartPlayback() {
 }
 
 function attachEvents() {
+  const topLoaders = [
+    { el: elements.loadTop, opts: { label: 'US Top 50' } },
+    { el: elements.loadTopUk, opts: { country: 'gb', label: 'UK Top 50' } },
+    { el: elements.loadTopArts, opts: { genreId: TOP_GENRES.arts, label: 'Arts Top 50' } },
+    { el: elements.loadTopBusiness, opts: { genreId: TOP_GENRES.business, label: 'Business Top 50' } },
+    { el: elements.loadTopMusic, opts: { genreId: TOP_GENRES.music, label: 'Music Top 50' } },
+  ];
+
   elements.addFeedBtn.addEventListener('click', handleAddFeed);
-  elements.loadTop.addEventListener('click', handleLoadTop);
+  topLoaders.forEach(({ el, opts }) => {
+    el?.addEventListener('click', () => handleLoadTop(opts));
+  });
   elements.togglePlay.addEventListener('click', () => {
     if (state.isPlaying) {
       stopPlayback();
@@ -1110,7 +1136,7 @@ async function init() {
   }
   const shouldAutoLoadTop = !cachedTop?.feeds?.length && state.feeds.length === 0;
   if (shouldAutoLoadTop) {
-    await handleLoadTop();
+    await handleLoadTop({ label: 'US Top 50' });
   }
   await ensureNoiseBuffer(state.selectedNoise);
 }
