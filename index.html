@@ -138,6 +138,30 @@
       <label for="snippetLevel">Snippet level</label>
       <input type="range" id="snippetLevel" min="0" max="1" step="0.01" value="0.6" />
 
+      <label>Snippet gap (seconds)</label>
+      <div class="row">
+        <input type="number" id="minGap" min="1" max="30" value="6" style="width: 100px;" />
+        <span class="small">to</span>
+        <input type="number" id="maxGap" min="1" max="30" value="18" style="width: 100px;" />
+        <span class="small">No gap will exceed the max.</span>
+      </div>
+
+      <label>Snippet length (seconds)</label>
+      <div class="row">
+        <input type="number" id="minLength" min="4" max="60" value="18" style="width: 100px;" />
+        <span class="small">to</span>
+        <input type="number" id="maxLength" min="4" max="60" value="26" style="width: 100px;" />
+        <span class="small">Longer clips improve speech intelligibility.</span>
+      </div>
+
+      <label for="tone">Snippet tone</label>
+      <input type="range" id="tone" min="400" max="4000" step="50" value="2200" />
+      <div class="small">Lower values sound more muffled.</div>
+
+      <label for="reverbMix">Reverb mix</label>
+      <input type="range" id="reverbMix" min="0" max="1" step="0.01" value="0.55" />
+      <div class="small">0 = dry voice, 1 = fully reverberant.</div>
+
       <label for="sleepMinutes">Sleep timer (minutes, optional)</label>
       <input type="number" id="sleepMinutes" min="1" placeholder="e.g. 30" style="width: 120px;" />
       <div class="small" id="timerDisplay"></div>

@@ -5,11 +5,14 @@ const state = {
   masterGain: null,
   noiseGain: null,
   snippetGain: null,
+  dryGain: null,
+  reverbGain: null,
   lowpass: null,
   convolver: null,
   noiseSource: null,
   customNoiseBuffer: null,
   buffers: new Map(),
+  failureCounts: new Map(),
   isPlaying: false,
   snippetTimeoutId: null,
   timerIntervalId: null,
@@ -35,6 +38,12 @@ const elements = {
   playStatus: document.getElementById('playStatus'),
   noiseLevel: document.getElementById('noiseLevel'),
   snippetLevel: document.getElementById('snippetLevel'),
+  minGap: document.getElementById('minGap'),
+  maxGap: document.getElementById('maxGap'),
+  minLength: document.getElementById('minLength'),
+  maxLength: document.getElementById('maxLength'),
+  tone: document.getElementById('tone'),
+  reverbMix: document.getElementById('reverbMix'),
   sleepMinutes: document.getElementById('sleepMinutes'),
   timerDisplay: document.getElementById('timerDisplay'),
   episodeSummary: document.getElementById('episodeSummary'),
@@ -120,7 +129,8 @@ function updateSnippetStatus(extra = '') {
   if (elements.nextSnippet) {
     if (state.isPlaying && nextSnippetAt) {
       const secs = Math.max(0, Math.round((nextSnippetAt - Date.now()) / 1000));
-      elements.nextSnippet.textContent = `Next snippet scheduled in ~${secs}s.`;
+      const { minGap, maxGap } = getSnippetConfig();
+      elements.nextSnippet.textContent = `Next snippet in ~${secs}s (gap range ${minGap}-${maxGap}s).`;
     } else {
       elements.nextSnippet.textContent = '';
     }
@@ -144,6 +154,29 @@ function randomBetween(min, max) {
   return Math.random() * (max - min) + min;
 }
 
+function getNumberInput(el, fallback, minValue = -Infinity, maxValue = Infinity) {
+  const parsed = parseFloat(el?.value);
+  if (Number.isFinite(parsed)) {
+    return Math.min(Math.max(parsed, minValue), maxValue);
+  }
+  return fallback;
+}
+
+function getSnippetConfig() {
+  let minGap = getNumberInput(elements.minGap, 6, 1, 30);
+  let maxGap = getNumberInput(elements.maxGap, 18, 1, 30);
+  if (maxGap < minGap) maxGap = minGap;
+
+  let minLength = getNumberInput(elements.minLength, 18, 4, 60);
+  let maxLength = getNumberInput(elements.maxLength, 26, 4, 60);
+  if (maxLength < minLength) maxLength = minLength;
+
+  const tone = getNumberInput(elements.tone, 2200, 400, 4000);
+  const reverbMix = getNumberInput(elements.reverbMix, 0.55, 0, 1);
+
+  return { minGap, maxGap, minLength, maxLength, tone, reverbMix };
+}
+
 function buildAudioGraph() {
   if (!state.audioCtx) {
     state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -162,14 +195,23 @@ function buildAudioGraph() {
 
   state.lowpass = ctx.createBiquadFilter();
   state.lowpass.type = 'lowpass';
-  state.lowpass.frequency.value = 2200;
+  state.lowpass.frequency.value = getSnippetConfig().tone;
 
   state.convolver = ctx.createConvolver();
   state.convolver.buffer = createImpulseResponse(ctx);
 
+  state.dryGain = ctx.createGain();
+  state.reverbGain = ctx.createGain();
+  const { reverbMix } = getSnippetConfig();
+  state.dryGain.gain.value = 1 - reverbMix;
+  state.reverbGain.gain.value = reverbMix;
+
   state.snippetGain.connect(state.lowpass);
+  state.lowpass.connect(state.dryGain);
   state.lowpass.connect(state.convolver);
-  state.convolver.connect(state.masterGain);
+  state.dryGain.connect(state.masterGain);
+  state.convolver.connect(state.reverbGain);
+  state.reverbGain.connect(state.masterGain);
 }
 
 function createNoiseBuffer(ctx) {
@@ -198,6 +240,14 @@ function createImpulseResponse(ctx) {
     }
   }
   return impulse;
+}
+
+function applyToneAndReverb() {
+  if (!state.lowpass || !state.dryGain || !state.reverbGain) return;
+  const { tone, reverbMix } = getSnippetConfig();
+  state.lowpass.frequency.value = tone;
+  state.dryGain.gain.value = 1 - reverbMix;
+  state.reverbGain.gain.value = reverbMix;
 }
 
 function startNoise() {
@@ -240,13 +290,14 @@ async function loadAudioBuffer(url) {
 }
 
 async function playOneSnippet() {
-  if (!state.isPlaying || !state.episodes.length) return;
+  if (!state.isPlaying || !state.episodes.length) return false;
   const episode = weightedRandomEpisode();
-  if (!episode) return;
+  if (!episode) return false;
   state.diagnostics.snippetAttempts += 1;
   try {
     const buffer = await loadAudioBuffer(episode.audioUrl);
-    const snippetLength = randomBetween(15, 25);
+    const { minLength, maxLength } = getSnippetConfig();
+    const snippetLength = randomBetween(minLength, maxLength);
     const ctx = state.audioCtx;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -256,21 +307,35 @@ async function playOneSnippet() {
     source.start(ctx.currentTime, offset, snippetLength);
     state.diagnostics.snippetSuccesses += 1;
     state.diagnostics.lastSnippetMessage = `Playing "${episode.title}"`;
+    state.failureCounts.delete(episode.audioUrl);
+    updateSnippetStatus();
+    return true;
   } catch (err) {
     console.warn('Snippet failed', err);
-    state.diagnostics.lastSnippetMessage = `Snippet failed: ${err?.message || err}`;
+    const currentFails = (state.failureCounts.get(episode.audioUrl) || 0) + 1;
+    state.failureCounts.set(episode.audioUrl, currentFails);
+    if (currentFails >= 3) {
+      state.episodes = state.episodes.filter((ep) => ep.audioUrl !== episode.audioUrl);
+      state.failureCounts.delete(episode.audioUrl);
+      updateEpisodeSummary();
+      state.diagnostics.lastSnippetMessage = `Removed failing episode: ${episode.title}`;
+    } else {
+      state.diagnostics.lastSnippetMessage = `Snippet failed (${currentFails}x): ${err?.message || err}`;
+    }
+    updateSnippetStatus();
+    return false;
   }
-  updateSnippetStatus();
 }
 
-function scheduleNextSnippet() {
+function scheduleNextSnippet(forcedGapSeconds = null) {
   if (!state.isPlaying) return;
-  const gapSeconds = randomBetween(10, 30);
+  const { minGap, maxGap } = getSnippetConfig();
+  const gapSeconds = forcedGapSeconds ?? randomBetween(minGap, maxGap);
   state.diagnostics.nextSnippetAt = Date.now() + gapSeconds * 1000;
   updateSnippetStatus();
   state.snippetTimeoutId = setTimeout(async () => {
-    await playOneSnippet();
-    scheduleNextSnippet();
+    const success = await playOneSnippet();
+    scheduleNextSnippet(success ? null : 1);
   }, gapSeconds * 1000);
 }
 
@@ -350,9 +415,11 @@ async function startPlayback() {
   state.diagnostics.snippetSuccesses = 0;
   state.diagnostics.lastSnippetMessage = 'Starting playback...';
   state.diagnostics.nextSnippetAt = null;
+  state.failureCounts.clear();
   updateSnippetStatus();
   if (!state.audioCtx) buildAudioGraph();
   const ctx = state.audioCtx;
+  applyToneAndReverb();
   await ctx.resume();
 
   state.masterGain.gain.cancelScheduledValues(ctx.currentTime);
@@ -365,8 +432,8 @@ async function startPlayback() {
   state.isPlaying = true;
   updatePlayStatus('Playing');
   elements.togglePlay.textContent = 'Stop';
-  await playOneSnippet();
-  scheduleNextSnippet();
+  const firstSuccess = await playOneSnippet();
+  scheduleNextSnippet(firstSuccess ? null : 1);
 
   const minutes = parseFloat(elements.sleepMinutes.value);
   if (Number.isFinite(minutes) && minutes > 0) {
@@ -486,6 +553,17 @@ function attachEvents() {
     if (state.snippetGain) {
       state.snippetGain.gain.value = parseFloat(elements.snippetLevel.value);
     }
+  });
+
+  const toneControls = [elements.tone, elements.reverbMix];
+  toneControls.forEach((el) => {
+    el?.addEventListener('input', () => {
+      applyToneAndReverb();
+    });
+  });
+
+  [elements.minGap, elements.maxGap, elements.minLength, elements.maxLength].forEach((el) => {
+    el?.addEventListener('input', () => updateSnippetStatus());
   });
 
   elements.setNoiseUrl.addEventListener('click', handleCustomNoiseUrl);
