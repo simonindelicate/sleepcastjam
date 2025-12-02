@@ -455,15 +455,10 @@ function displayGhost(title) {
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.textContent = pruneTitle(title) || title;
-  const centered = (spread, bias = 50) => {
-    const u = Math.random() || 1e-6;
-    const v = Math.random();
-    const gaussian = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-    const value = bias + gaussian * spread;
-    return Math.min(110, Math.max(-10, value));
-  };
-  const x = centered(14);
-  const y = centered(12);
+  const edgeBias = Math.random() < 0.5;
+  const randomSpread = (min, max) => Math.random() * (max - min) + min;
+  const x = edgeBias ? randomSpread(4, 48) : randomSpread(52, 96);
+  const y = randomSpread(4, 94);
   const size = 18 + Math.random() * 34;
   const color = GHOST_COLORS[Math.floor(Math.random() * GHOST_COLORS.length)];
   ghost.style.left = `${x}%`;
