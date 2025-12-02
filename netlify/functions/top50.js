@@ -1,3 +1,7 @@
+const fetch =
+  global.fetch ||
+  ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
+
 const TOP_FEED_URL = 'https://rss.itunes.apple.com/api/v1/us/podcasts/top-podcasts/all/100/explicit.json';
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
 
@@ -15,6 +19,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+function fetchWithTimeout(url, timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
 function extractIdFromUrl(url) {
   const match = url.match(/\/id(\d+)/);
   return match ? match[1] : null;
@@ -25,12 +35,9 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: corsHeaders, body: '' };
   }
 
+  let reason = '';
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-    const response = await fetch(TOP_FEED_URL, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const response = await fetchWithTimeout(TOP_FEED_URL, 6000);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch top feed: ${response.status}`);
@@ -44,7 +51,7 @@ exports.handler = async (event) => {
         const podcastId = entry.id || extractIdFromUrl(entry.url || '');
         if (!podcastId) return null;
         try {
-          const lookupResp = await fetch(`${LOOKUP_URL}?id=${podcastId}`);
+          const lookupResp = await fetchWithTimeout(`${LOOKUP_URL}?id=${podcastId}`, 6000);
           if (!lookupResp.ok) return null;
           const lookup = await lookupResp.json();
           const feedUrl = lookup?.results?.[0]?.feedUrl;
@@ -75,13 +82,16 @@ exports.handler = async (event) => {
 
     throw new Error('No feeds resolved');
   } catch (error) {
+    reason = error?.message || 'Unknown failure';
     console.error('top50 error', error);
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         feeds: FALLBACK_FEEDS,
-        warning: 'Using fallback list because the Apple API was unreachable.',
+        warning:
+          'Using fallback list because the Apple API was unreachable or timed out. ' +
+          `Reason: ${reason}`,
       }),
     };
   }

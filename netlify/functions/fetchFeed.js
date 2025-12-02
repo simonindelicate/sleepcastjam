@@ -1,3 +1,7 @@
+const fetch =
+  global.fetch ||
+  ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
