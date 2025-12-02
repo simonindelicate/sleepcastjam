@@ -19,3 +19,5 @@ To keep the UI usable in that scenario, the function now wraps all outbound call
 ## Audio proxy to avoid CORS failures
 
 Podcast audio files are still hosted by the publishers and many do not send permissive CORS headers. The client now pulls every snippet through `/api/audio`, a Netlify Function that re-fetches the file server-side and returns it with `Access-Control-Allow-Origin: *`. If snippet decoding fails because of a blocked request, check the function logs for `audio proxy error` to see the upstream response.
+
+Netlify responses are capped around 6 MB; the proxy intentionally limits downloads to ~2.5 MB (plus base64 overhead) via a `Range` request. You’ll get a `206` response with an `X-Proxy-Note` header when truncation happens, and the UI surfaces that note in the snippet status line.

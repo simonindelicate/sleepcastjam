@@ -7,8 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-// Netlify hard-limits responses to ~6 MB; keep a small safety margin.
-const MAX_BYTES = 6_291_556;
+// Netlify hard-limits responses to ~6 MB; keep a large safety margin and
+// account for base64 expansion (~33%). This keeps the encoded body well under
+// the platform limit while still delivering a meaningful snippet.
+const MAX_BYTES = 2_500_000;
 const FETCH_TIMEOUT_MS = 15000;
 
 exports.handler = async (event) => {

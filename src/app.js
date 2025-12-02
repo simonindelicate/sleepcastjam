@@ -22,6 +22,7 @@ const state = {
     snippetSuccesses: 0,
     lastSnippetMessage: 'Waiting to start.',
     nextSnippetAt: null,
+    proxyNote: '',
   },
 };
 
@@ -121,9 +122,10 @@ function updateEpisodeSummary() {
 }
 
 function updateSnippetStatus(extra = '') {
-  const { snippetAttempts, snippetSuccesses, lastSnippetMessage, nextSnippetAt } = state.diagnostics;
+  const { snippetAttempts, snippetSuccesses, lastSnippetMessage, nextSnippetAt, proxyNote } = state.diagnostics;
   if (elements.snippetStatus) {
-    const status = `Snippets tried: ${snippetAttempts}, played: ${snippetSuccesses}. ${lastSnippetMessage}`;
+    const proxy = proxyNote ? ` Proxy: ${proxyNote}` : '';
+    const status = `Snippets tried: ${snippetAttempts}, played: ${snippetSuccesses}. ${lastSnippetMessage}${proxy}`;
     elements.snippetStatus.textContent = status + (extra ? ` ${extra}` : '');
   }
   if (elements.nextSnippet) {
@@ -289,8 +291,10 @@ async function loadAudioBuffer(url) {
   const resp = await fetch(proxiedAudioUrl(url));
   if (!resp.ok) {
     const detail = await resp.text().catch(() => '');
+    state.diagnostics.proxyNote = '';
     throw new Error(`audio fetch failed (${resp.status}): ${detail.slice(0, 140)}`);
   }
+  state.diagnostics.proxyNote = resp.headers.get('x-proxy-note') || '';
   const arrayBuf = await resp.arrayBuffer();
   const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
   state.buffers.set(url, audioBuf);
@@ -423,6 +427,7 @@ async function startPlayback() {
   state.diagnostics.snippetSuccesses = 0;
   state.diagnostics.lastSnippetMessage = 'Starting playback...';
   state.diagnostics.nextSnippetAt = null;
+  state.diagnostics.proxyNote = '';
   state.failureCounts.clear();
   updateSnippetStatus();
   if (!state.audioCtx) buildAudioGraph();
