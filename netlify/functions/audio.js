@@ -7,7 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-const MAX_BYTES = 8 * 1024 * 1024; // keep responses small to avoid 502s on big episodes
+// Netlify hard-limits responses to ~6 MB; keep a small safety margin.
+const MAX_BYTES = 6_291_556;
 const FETCH_TIMEOUT_MS = 15000;
 
 exports.handler = async (event) => {
@@ -25,8 +26,6 @@ exports.handler = async (event) => {
 
   try {
     const upstream = await fetch(url, {
-      // Limit response size; node-fetch throws if it exceeds `size`.
-      size: MAX_BYTES,
       headers: {
         // Some podcast hosts require a UA; keep it minimal but explicit.
         'User-Agent': 'sleepcast-podcast-noise/1.0',
@@ -47,16 +46,48 @@ exports.handler = async (event) => {
     }
 
     const contentType = upstream.headers.get('content-type') || 'audio/mpeg';
-    const arrayBuffer = await upstream.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    let bytesRead = 0;
+    let truncated = false;
+    const chunks = [];
+
+    if (!upstream.body) {
+      throw new Error('No response body');
+    }
+
+    for await (const chunk of upstream.body) {
+      const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const remaining = MAX_BYTES - bytesRead;
+      if (remaining <= 0) {
+        truncated = true;
+        break;
+      }
+
+      if (bufferChunk.length > remaining) {
+        chunks.push(bufferChunk.subarray(0, remaining));
+        bytesRead += remaining;
+        truncated = true;
+        // Stop reading to avoid exceeding limits.
+        if (upstream.body.destroy) upstream.body.destroy();
+        break;
+      }
+
+      chunks.push(bufferChunk);
+      bytesRead += bufferChunk.length;
+    }
+
+    const payload = Buffer.concat(chunks);
+    const base64 = payload.toString('base64');
 
     return {
-      statusCode: 200,
+      statusCode: truncated ? 206 : 200,
       headers: {
         ...corsHeaders,
         'Content-Type': contentType,
         'Cache-Control': 'public, max-age=1800',
         'Accept-Ranges': 'bytes',
+        'X-Proxy-Note': truncated
+          ? `Audio truncated to ${bytesRead} bytes to fit Netlify limits`
+          : 'Full audio (within limit)',
       },
       isBase64Encoded: true,
       body: base64,
