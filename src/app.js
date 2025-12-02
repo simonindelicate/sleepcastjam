@@ -137,36 +137,70 @@ function setHeroTimer(text) {
   }
 }
 
+function formatRemainingTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
 function preloadImage(src) {
   const img = new Image();
   img.src = src;
 }
 
 function loadHeroBackgrounds() {
-  let images = [];
+  const images = new Set();
+  const addIfValid = (src) => {
+    if (src && typeof src === 'string') {
+      images.add(src);
+    }
+  };
   try {
     const glob = typeof import.meta !== 'undefined' && import.meta.glob
       ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
       : null;
     if (glob) {
-      images = Object.values(glob)
+      Object.values(glob)
         .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
-        .filter(Boolean);
+        .forEach(addIfValid);
     }
   } catch (err) {
     console.error('Unable to glob hero backgrounds', err);
   }
 
-  const fallbackImages = [
-    '/src/assets/backgrounds/background.jpg',
-    '/src/assets/backgrounds/background2.jpg',
-  ];
+  try {
+    const ctx = typeof require === 'function' && typeof require.context === 'function'
+      ? require.context('./assets/backgrounds', false, /\.(jpg|jpeg|png|webp)$/i)
+      : null;
+    if (ctx) {
+      ctx.keys().forEach((key) => {
+        const mod = ctx(key);
+        const src = typeof mod === 'string' ? mod : mod?.default;
+        addIfValid(src);
+      });
+    }
+  } catch (err) {
+    console.error('Unable to load hero backgrounds via require.context', err);
+  }
 
-  fallbackImages.forEach((src) => {
-    if (!images.includes(src)) images.push(src);
-  });
+  if (!images.size) {
+    try {
+      const base = new URL('./assets/backgrounds/', import.meta.url).pathname;
+      ['background.jpg', 'background2.jpg', 'background3.jpg'].forEach((file) => {
+        addIfValid(`${base}${file}`);
+      });
+      if (images.size) {
+        console.warn('Using fallback hero backgrounds; dynamic discovery not available.');
+      }
+    } catch (err) {
+      console.error('Unable to resolve fallback hero backgrounds', err);
+    }
+  }
 
-  heroBackgroundState.images = Array.from(new Set(images));
+  heroBackgroundState.images = Array.from(images);
   heroBackgroundState.images.forEach(preloadImage);
 }
 
@@ -780,19 +814,20 @@ function startTimer(minutes) {
   if (!minutes) return;
   const end = Date.now() + minutes * 60 * 1000;
   state.endTime = end;
-  const label = `Time remaining: ${minutes.toFixed(1)} min`;
+  const initialRemaining = formatRemainingTime(minutes * 60 * 1000);
+  const label = `Time remaining: ${initialRemaining}`;
   elements.timerDisplay.textContent = label;
-  setHeroTimer(label);
+  setHeroTimer(initialRemaining);
   state.timerIntervalId = setInterval(() => {
     const remaining = end - Date.now();
     if (remaining <= 0) {
       stopPlayback(true);
       return;
     }
-    const mins = remaining / 60000;
-    const tickLabel = `Time remaining: ${mins.toFixed(1)} min`;
+    const tickRemaining = formatRemainingTime(remaining);
+    const tickLabel = `Time remaining: ${tickRemaining}`;
     elements.timerDisplay.textContent = tickLabel;
-    setHeroTimer(tickLabel);
+    setHeroTimer(tickRemaining);
   }, 1000);
 }
 
