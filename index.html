@@ -25,7 +25,7 @@
       position: relative;
       min-height: 100vh;
       width: 100%;
-      background: url('/src/assets/background2.jpg') center/cover no-repeat, #222;
+      background: #111827;
       overflow: hidden;
       border-bottom: 2px solid rgba(148, 163, 184, 0.15);
     }
@@ -35,11 +35,25 @@
       inset: 0;
       background: linear-gradient(180deg, rgba(15, 23, 42, 0.55), rgba(15, 23, 42, 0.35));
       pointer-events: none;
+      z-index: 1;
+    }
+    .hero-bg-layer {
+      position: absolute;
+      inset: 0;
+      background-size: cover;
+      background-position: center;
+      opacity: 0;
+      transition: opacity 1.6s ease;
+      will-change: opacity;
+    }
+    .hero-bg-layer.visible {
+      opacity: 1;
     }
     #ghostContainer {
       position: absolute;
       inset: 0;
       pointer-events: none;
+      z-index: 2;
     }
     .ghost {
       position: absolute;
@@ -74,6 +88,7 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
       backdrop-filter: blur(6px);
+      z-index: 2;
     }
     .hero-timer {
       position: absolute;
@@ -88,6 +103,7 @@
       letter-spacing: 0.05em;
       display: none;
       backdrop-filter: blur(6px);
+      z-index: 2;
     }
     .hero-center {
       position: absolute;
@@ -134,6 +150,22 @@
       color: #e2e8f0;
       box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     }
+    .hero-background-toggle {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.6);
+      color: #cbd5e1;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+      font-size: 14px;
+      padding: 8px 12px;
+      opacity: 0.8;
+      transition: opacity 0.2s ease, transform 0.08s ease;
+    }
+    .hero-background-toggle:hover,
+    .hero-background-toggle:focus-visible {
+      opacity: 1;
+    }
+    .hero-background-toggle:active { transform: scale(0.99); }
     main {
       max-width: 1100px;
       width: 100%;
@@ -162,6 +194,25 @@
       box-shadow: 0 8px 16px rgba(59, 130, 246, 0.35);
     }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .is-loading {
+      position: relative;
+      cursor: wait;
+    }
+    .is-loading::after {
+      content: '';
+      position: absolute;
+      inset: 50% auto auto 50%;
+      width: 22px;
+      height: 22px;
+      margin: -11px 0 0 -11px;
+      border-radius: 50%;
+      border: 3px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #fff;
+      animation: spin 0.85s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
     input, slider, select {
       background: var(--panel);
       border: 1px solid #334155;
@@ -233,12 +284,17 @@
 </head>
 <body>
   <div class="hero">
+    <div class="hero-bg-layer visible" id="heroBgA"></div>
+    <div class="hero-bg-layer" id="heroBgB"></div>
     <div id="ghostContainer"></div>
     <div class="noise-chip" id="noiseLabel">Noise: Pool</div>
     <div class="hero-timer" id="heroTimer"></div>
     <div class="hero-center">
       <button id="heroPlayToggle" class="hero-play" type="button">Play</button>
-      <button id="scrollControls" class="hero-controls" type="button">Controls</button>
+      <div class="row" style="gap: 8px;">
+        <button id="scrollControls" class="hero-controls" type="button">Controls</button>
+        <button id="cycleBackground" class="hero-background-toggle" type="button">Background</button>
+      </div>
     </div>
   </div>
 
@@ -320,7 +376,7 @@
       <div class="small">0 = dry voice, 1 = fully reverberant.</div>
 
       <label for="sleepMinutes">Sleep timer (minutes, optional)</label>
-      <input type="number" id="sleepMinutes" min="1" placeholder="e.g. 30" style="width: 120px;" />
+      <input type="number" id="sleepMinutes" min="1" value="30" placeholder="e.g. 30" style="width: 120px;" />
       <div class="small" id="timerDisplay"></div>
     </section>
   </main>
