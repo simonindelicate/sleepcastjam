@@ -2,9 +2,6 @@ const fetch =
   global.fetch ||
   ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
 
-const MARKETING_TOOLS_URL =
-  'https://rss.applemarketingtools.com/api/v2/us/podcasts/top/100/podcasts.json';
-const CLASSIC_ITUNES_URL = 'https://itunes.apple.com/us/rss/toppodcasts/limit=100/genre=1310/json';
 const LOOKUP_URL = 'https://itunes.apple.com/lookup';
 
 // Helpful for local development when Apple endpoints are unreachable
@@ -59,11 +56,23 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: corsHeaders, body: '' };
   }
 
+  const params = event.queryStringParameters || {};
+  const country = /^[a-z]{2}$/i.test(params.country || '')
+    ? params.country.toLowerCase()
+    : 'us';
+  const genre = params.genre && /^\d+$/.test(params.genre) ? params.genre : '';
+
+  const marketingToolsUrl =
+    `https://rss.applemarketingtools.com/api/v2/${country}/podcasts/top/100/podcasts.json` +
+    (genre ? `?genre=${genre}` : '');
+  const classicItunesUrl =
+    `https://itunes.apple.com/${country}/rss/toppodcasts/limit=100${genre ? `/genre=${genre}` : ''}/json`;
+
   let reason = '';
   try {
     const attempts = [
-      { url: MARKETING_TOOLS_URL, normalizer: (data) => normalizeMarketingTools(data?.feed?.results) },
-      { url: CLASSIC_ITUNES_URL, normalizer: (data) => normalizeClassic(data?.feed?.entry) },
+      { url: marketingToolsUrl, normalizer: (data) => normalizeMarketingTools(data?.feed?.results) },
+      { url: classicItunesUrl, normalizer: (data) => normalizeClassic(data?.feed?.entry) },
     ];
 
     for (const attempt of attempts) {
