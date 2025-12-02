@@ -8,6 +8,7 @@ const state = {
   lowpass: null,
   convolver: null,
   noiseSource: null,
+  customNoiseBuffer: null,
   buffers: new Map(),
   isPlaying: false,
   snippetTimeoutId: null,
@@ -30,6 +31,12 @@ const elements = {
   snippetLevel: document.getElementById('snippetLevel'),
   sleepMinutes: document.getElementById('sleepMinutes'),
   timerDisplay: document.getElementById('timerDisplay'),
+  noiseStatus: document.getElementById('noiseStatus'),
+  noiseUrl: document.getElementById('noiseUrl'),
+  setNoiseUrl: document.getElementById('setNoiseUrl'),
+  noiseFile: document.getElementById('noiseFile'),
+  setNoiseFile: document.getElementById('setNoiseFile'),
+  resetNoise: document.getElementById('resetNoise'),
 };
 
 function loadUserFeeds() {
@@ -117,7 +124,7 @@ function buildAudioGraph() {
 
   state.lowpass = ctx.createBiquadFilter();
   state.lowpass.type = 'lowpass';
-  state.lowpass.frequency.value = 1500;
+  state.lowpass.frequency.value = 2200;
 
   state.convolver = ctx.createConvolver();
   state.convolver.buffer = createImpulseResponse(ctx);
@@ -140,8 +147,8 @@ function createNoiseBuffer(ctx) {
 }
 
 function createImpulseResponse(ctx) {
-  const duration = 1.5;
-  const decay = 2.5;
+  const duration = 1;
+  const decay = 1.8;
   const sampleRate = ctx.sampleRate;
   const length = sampleRate * duration;
   const impulse = ctx.createBuffer(2, length, sampleRate);
@@ -161,11 +168,27 @@ function startNoise() {
     try { state.noiseSource.stop(); } catch (e) { /* ignore */ }
   }
   const source = ctx.createBufferSource();
-  source.buffer = createNoiseBuffer(ctx);
+  source.buffer = state.customNoiseBuffer || createNoiseBuffer(ctx);
   source.loop = true;
   source.connect(state.noiseGain);
   source.start();
   state.noiseSource = source;
+}
+
+async function loadCustomNoiseFromUrl(url) {
+  if (!state.audioCtx) buildAudioGraph();
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error('Unable to fetch noise audio');
+  const arrayBuf = await resp.arrayBuffer();
+  const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
+  state.customNoiseBuffer = audioBuf;
+}
+
+async function loadCustomNoiseFromFile(file) {
+  if (!state.audioCtx) buildAudioGraph();
+  const arrayBuf = await file.arrayBuffer();
+  const audioBuf = await state.audioCtx.decodeAudioData(arrayBuf);
+  state.customNoiseBuffer = audioBuf;
 }
 
 async function loadAudioBuffer(url) {
@@ -184,7 +207,7 @@ async function playOneSnippet() {
   if (!episode) return;
   try {
     const buffer = await loadAudioBuffer(episode.audioUrl);
-    const snippetLength = randomBetween(8, 15);
+    const snippetLength = randomBetween(15, 25);
     const ctx = state.audioCtx;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
@@ -199,7 +222,7 @@ async function playOneSnippet() {
 
 function scheduleNextSnippet() {
   if (!state.isPlaying) return;
-  const gapSeconds = randomBetween(10, 60);
+  const gapSeconds = randomBetween(10, 30);
   state.snippetTimeoutId = setTimeout(async () => {
     await playOneSnippet();
     scheduleNextSnippet();
@@ -220,6 +243,40 @@ function stopTimer() {
   }
   state.endTime = null;
   elements.timerDisplay.textContent = '';
+}
+
+async function handleCustomNoiseUrl() {
+  const url = elements.noiseUrl.value.trim();
+  if (!url) return;
+  elements.noiseStatus.textContent = 'Loading custom noise...';
+  try {
+    await loadCustomNoiseFromUrl(url);
+    elements.noiseStatus.textContent = 'Custom noise loaded';
+    if (state.isPlaying) startNoise();
+  } catch (err) {
+    console.error(err);
+    elements.noiseStatus.textContent = 'Failed to load noise URL';
+  }
+}
+
+async function handleCustomNoiseFile() {
+  const file = elements.noiseFile.files[0];
+  if (!file) return;
+  elements.noiseStatus.textContent = 'Loading file...';
+  try {
+    await loadCustomNoiseFromFile(file);
+    elements.noiseStatus.textContent = 'Custom noise loaded';
+    if (state.isPlaying) startNoise();
+  } catch (err) {
+    console.error(err);
+    elements.noiseStatus.textContent = 'Failed to load noise file';
+  }
+}
+
+function resetNoise() {
+  state.customNoiseBuffer = null;
+  elements.noiseStatus.textContent = 'Using generated noise';
+  if (state.isPlaying) startNoise();
 }
 
 function startTimer(minutes) {
@@ -373,12 +430,19 @@ function attachEvents() {
       state.snippetGain.gain.value = parseFloat(elements.snippetLevel.value);
     }
   });
+
+  elements.setNoiseUrl.addEventListener('click', handleCustomNoiseUrl);
+  elements.setNoiseFile.addEventListener('click', handleCustomNoiseFile);
+  elements.resetNoise.addEventListener('click', resetNoise);
 }
 
 async function init() {
   loadUserFeeds();
   renderFeeds();
   attachEvents();
+  if (elements.noiseStatus) {
+    elements.noiseStatus.textContent = 'Using generated noise';
+  }
   if (state.feeds.length) {
     for (const feed of state.feeds) {
       await fetchFeed(feed);
