@@ -40,6 +40,14 @@ const NOISE_PROFILES = [
   { id: 'sepia', label: 'Sepia', audio: '/src/assets/sepia.ogg', art: '/src/assets/sepia.png' },
 ];
 
+const GHOST_COLORS = [
+  'rgba(226, 232, 240, 0.72)',
+  'rgba(209, 213, 219, 0.68)',
+  'rgba(186, 196, 210, 0.66)',
+  'rgba(148, 163, 184, 0.62)',
+  'rgba(161, 174, 196, 0.64)',
+];
+
 const elements = {
   loadTop: document.getElementById('loadTop'),
   feedStatus: document.getElementById('feedStatus'),
@@ -257,12 +265,22 @@ function displayGhost(title) {
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.textContent = title;
-  const x = Math.random() * 120 - 10;
-  const y = Math.random() * 110 - 5;
-  const size = 42 + Math.random() * 36;
+  const centered = (spread, bias = 50) => {
+    const u = Math.random() || 1e-6;
+    const v = Math.random();
+    const gaussian = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    const value = bias + gaussian * spread;
+    return Math.min(110, Math.max(-10, value));
+  };
+  const x = centered(14);
+  const y = centered(12);
+  const size = 32 + Math.random() * 54;
+  const color = GHOST_COLORS[Math.floor(Math.random() * GHOST_COLORS.length)];
   ghost.style.left = `${x}%`;
   ghost.style.top = `${y}%`;
   ghost.style.fontSize = `${size}px`;
+  ghost.style.color = color;
+  ghost.style.textShadow = `0 0 28px ${color.replace('0.', '0.35')}`;
   ghost.style.animationDuration = `${10 + Math.random() * 6}s`;
   elements.ghostContainer.appendChild(ghost);
   setTimeout(() => ghost.remove(), 16000);
