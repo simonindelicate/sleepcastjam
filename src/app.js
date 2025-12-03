@@ -120,6 +120,21 @@ const heroBackgroundState = {
 };
 
 const BACKGROUND_ROTATION_MS = 3 * 60 * 1000;
+const HERO_BACKGROUNDS = [
+  '/src/assets/backgrounds/FB_IMG_1746949713216.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746949794513.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746949851138.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950013897.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950148866.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950298731.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950317013.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950323262.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950352140.jpg',
+  '/src/assets/backgrounds/PXL_20241028_025246625~2.jpg',
+  '/src/assets/backgrounds/background.jpg',
+  '/src/assets/backgrounds/background2.jpg',
+  '/src/assets/backgrounds/background3.jpg',
+];
 
 function pruneTitle(rawTitle) {
   if (!rawTitle) return rawTitle;
@@ -163,56 +178,8 @@ function preloadImage(src) {
   img.src = src;
 }
 
-function loadHeroBackgrounds() {
-  const images = new Set();
-  const addIfValid = (src) => {
-    if (src && typeof src === 'string') {
-      images.add(src);
-    }
-  };
-  try {
-    const glob = typeof import.meta !== 'undefined' && import.meta.glob
-      ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
-      : null;
-    if (glob) {
-      Object.values(glob)
-        .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
-        .forEach(addIfValid);
-    }
-  } catch (err) {
-    console.error('Unable to glob hero backgrounds', err);
-  }
-
-  try {
-    const ctx = typeof require === 'function' && typeof require.context === 'function'
-      ? require.context('./assets/backgrounds', false, /\.(jpg|jpeg|png|webp)$/i)
-      : null;
-    if (ctx) {
-      ctx.keys().forEach((key) => {
-        const mod = ctx(key);
-        const src = typeof mod === 'string' ? mod : mod?.default;
-        addIfValid(src);
-      });
-    }
-  } catch (err) {
-    console.error('Unable to load hero backgrounds via require.context', err);
-  }
-
-  if (!images.size) {
-    try {
-      const base = new URL('./assets/backgrounds/', import.meta.url).pathname;
-      ['background.jpg', 'background2.jpg', 'background3.jpg'].forEach((file) => {
-        addIfValid(`${base}${file}`);
-      });
-      if (images.size) {
-        console.warn('Using fallback hero backgrounds; dynamic discovery not available.');
-      }
-    } catch (err) {
-      console.error('Unable to resolve fallback hero backgrounds', err);
-    }
-  }
-
-  heroBackgroundState.images = Array.from(images);
+async function loadHeroBackgrounds() {
+  heroBackgroundState.images = [...HERO_BACKGROUNDS];
   heroBackgroundState.images.forEach(preloadImage);
 }
 
@@ -274,8 +241,8 @@ function restartHeroBackgroundInterval() {
   heroBackgroundState.intervalId = setInterval(() => cycleHeroBackground(false), BACKGROUND_ROTATION_MS);
 }
 
-function initHeroBackgrounds() {
-  loadHeroBackgrounds();
+async function initHeroBackgrounds() {
+  await loadHeroBackgrounds();
   if (!heroBackgroundState.images.length || !elements.heroBgLayers.length) return;
 
   const first = heroBackgroundState.images[0];
@@ -1142,7 +1109,7 @@ function attachEvents() {
 
 async function init() {
   renderSoundscapes();
-  initHeroBackgrounds();
+  await initHeroBackgrounds();
   setNoiseLabel(getNoiseProfile(state.selectedNoise).label);
   loadUserFeeds();
   const cachedTop = loadTopFeedCache();
