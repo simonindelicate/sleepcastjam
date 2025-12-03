@@ -163,7 +163,7 @@ function preloadImage(src) {
   img.src = src;
 }
 
-function loadHeroBackgrounds() {
+async function loadHeroBackgrounds() {
   const images = new Set();
   const addIfValid = (src) => {
     if (src && typeof src === 'string') {
@@ -196,6 +196,18 @@ function loadHeroBackgrounds() {
     }
   } catch (err) {
     console.error('Unable to load hero backgrounds via require.context', err);
+  }
+
+  if (!images.size && typeof fetch === 'function') {
+    try {
+      const resp = await fetch('/api/backgrounds', { cache: 'no-cache' });
+      if (resp.ok) {
+        const data = await resp.json();
+        (data?.images || []).forEach(addIfValid);
+      }
+    } catch (err) {
+      console.error('Unable to fetch hero backgrounds from API', err);
+    }
   }
 
   if (!images.size) {
@@ -274,8 +286,8 @@ function restartHeroBackgroundInterval() {
   heroBackgroundState.intervalId = setInterval(() => cycleHeroBackground(false), BACKGROUND_ROTATION_MS);
 }
 
-function initHeroBackgrounds() {
-  loadHeroBackgrounds();
+async function initHeroBackgrounds() {
+  await loadHeroBackgrounds();
   if (!heroBackgroundState.images.length || !elements.heroBgLayers.length) return;
 
   const first = heroBackgroundState.images[0];
@@ -1142,7 +1154,7 @@ function attachEvents() {
 
 async function init() {
   renderSoundscapes();
-  initHeroBackgrounds();
+  await initHeroBackgrounds();
   setNoiseLabel(getNoiseProfile(state.selectedNoise).label);
   loadUserFeeds();
   const cachedTop = loadTopFeedCache();
