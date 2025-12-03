@@ -171,44 +171,44 @@ async function loadHeroBackgrounds() {
     }
   };
 
-  try {
-    const glob = typeof import.meta !== 'undefined' && import.meta.glob
-      ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
-      : null;
-    if (glob) {
-      Object.values(glob)
-        .map((mod) => (typeof mod === 'string' ? mod : mod?.default))
-        .forEach(addIfValid);
-    }
-  } catch (err) {
-    console.error('Unable to glob hero backgrounds', err);
-  }
-
-  try {
-    const ctx = typeof require === 'function' && typeof require.context === 'function'
-      ? require.context('./assets/backgrounds', false, /\.(jpg|jpeg|png|webp)$/i)
-      : null;
-    if (ctx) {
-      ctx.keys().forEach((key) => {
-        const mod = ctx(key);
-        const src = typeof mod === 'string' ? mod : mod?.default;
-        addIfValid(src);
-      });
-    }
-  } catch (err) {
-    console.error('Unable to load hero backgrounds via require.context', err);
-  }
-
-  if (typeof fetch === 'function') {
+  const discoverViaApi = async () => {
     try {
       const resp = await fetch('/api/backgrounds', { cache: 'no-cache' });
-      if (resp.ok) {
-        const data = await resp.json();
-        (data?.images || []).forEach(addIfValid);
-      }
+      if (!resp.ok) return false;
+      const data = await resp.json();
+      (data?.images || []).forEach(addIfValid);
+      return true;
     } catch (err) {
       console.error('Unable to fetch hero backgrounds from API', err);
+      return false;
     }
+  };
+
+  const discoverViaDirectoryListing = async () => {
+    try {
+      const resp = await fetch('/src/assets/backgrounds/', { cache: 'no-cache' });
+      if (!resp.ok) return false;
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text/html')) return false;
+      const html = await resp.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const anchors = Array.from(doc.querySelectorAll('a[href]'));
+      anchors
+        .map((a) => a.getAttribute('href'))
+        .filter((href) => /\.(jpg|jpeg|png|webp)$/i.test(href))
+        .map((href) => (href.startsWith('/') ? href : `/src/assets/backgrounds/${href.replace(/^\.\//, '')}`))
+        .forEach(addIfValid);
+      return images.size > 0;
+    } catch (err) {
+      console.error('Unable to parse hero backgrounds directory listing', err);
+      return false;
+    }
+  };
+
+  const loaded = await discoverViaApi();
+  if (!loaded) {
+    await discoverViaDirectoryListing();
   }
 
   heroBackgroundState.images = Array.from(images);
