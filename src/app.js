@@ -170,6 +170,7 @@ async function loadHeroBackgrounds() {
       images.add(src);
     }
   };
+
   try {
     const glob = typeof import.meta !== 'undefined' && import.meta.glob
       ? import.meta.glob('./assets/backgrounds/*.{jpg,jpeg,png,webp}', { eager: true, import: 'default' })
@@ -210,21 +211,10 @@ async function loadHeroBackgrounds() {
     }
   }
 
-  if (!images.size) {
-    try {
-      const base = new URL('./assets/backgrounds/', import.meta.url).pathname;
-      ['background.jpg', 'background2.jpg', 'background3.jpg'].forEach((file) => {
-        addIfValid(`${base}${file}`);
-      });
-      if (images.size) {
-        console.warn('Using fallback hero backgrounds; dynamic discovery not available.');
-      }
-    } catch (err) {
-      console.error('Unable to resolve fallback hero backgrounds', err);
-    }
-  }
-
   heroBackgroundState.images = Array.from(images);
+  if (!heroBackgroundState.images.length) {
+    console.warn('No hero backgrounds found in /src/assets/backgrounds.');
+  }
   heroBackgroundState.images.forEach(preloadImage);
 }
 
