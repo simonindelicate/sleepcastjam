@@ -32,6 +32,7 @@ const state = {
 
 const STORAGE_KEY = 'podcastNoiseUserFeeds';
 const TOP_STORAGE_KEY = 'podcastNoiseTopFeeds';
+const FEED_LIMIT = 50;
 
 const TOP_GENRES = {
   arts: '1301',
@@ -455,10 +456,9 @@ function displayGhost(title) {
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
   ghost.textContent = pruneTitle(title) || title;
-  const edgeBias = Math.random() < 0.5;
-  const randomSpread = (min, max) => Math.random() * (max - min) + min;
-  const x = edgeBias ? randomSpread(4, 48) : randomSpread(52, 96);
-  const y = randomSpread(4, 94);
+  const padding = 12;
+  const x = padding + Math.random() * (100 - padding * 2);
+  const y = padding + Math.random() * (100 - padding * 2);
   const size = 18 + Math.random() * 34;
   const color = GHOST_COLORS[Math.floor(Math.random() * GHOST_COLORS.length)];
   ghost.style.left = `${x}%`;
@@ -914,16 +914,52 @@ function updateEpisodes(feed, parsed) {
   updateEpisodeSummary();
 }
 
+function makeRoomForUserFeed() {
+  const removedFeeds = [];
+  if (state.feeds.length < FEED_LIMIT) return removedFeeds;
+
+  const nonUserFeeds = state.feeds.filter((f) => !f.userAdded);
+  while (state.feeds.length >= FEED_LIMIT && nonUserFeeds.length) {
+    const toRemove = nonUserFeeds.pop();
+    const idx = state.feeds.indexOf(toRemove);
+    if (idx >= 0) {
+      state.feeds.splice(idx, 1);
+      removedFeeds.push(toRemove);
+    }
+  }
+
+  if (removedFeeds.length) {
+    const allowedFeedUrls = new Set(state.feeds.map((f) => f.feedUrl));
+    state.episodes = state.episodes.filter((ep) => allowedFeedUrls.has(ep.feedUrl));
+    renderFeeds();
+  }
+
+  return removedFeeds;
+}
+
 async function addTopFeeds(feeds) {
-  const newFeeds = feeds
-    .filter((feed) => !state.feeds.some((f) => f.feedUrl === feed.feedUrl))
+  const userFeeds = state.feeds.filter((f) => f.userAdded);
+  const userFeedUrls = new Set(userFeeds.map((f) => f.feedUrl));
+  const availableSlots = Math.max(0, FEED_LIMIT - userFeeds.length);
+  const limitedIncoming = feeds.slice(0, availableSlots);
+
+  const newFeeds = limitedIncoming
+    .filter((feed) => !userFeedUrls.has(feed.feedUrl))
     .map((feed) => ({
       ...feed,
       title: pruneTitle(feed.title) || feed.feedUrl,
       userAdded: false,
     }));
 
-  newFeeds.forEach((feed) => state.feeds.push(feed));
+  state.feeds.splice(0, state.feeds.length, ...userFeeds);
+  const allowedFeedUrls = new Set(userFeedUrls);
+
+  newFeeds.forEach((feed) => {
+    state.feeds.push(feed);
+    allowedFeedUrls.add(feed.feedUrl);
+  });
+
+  state.episodes = state.episodes.filter((ep) => allowedFeedUrls.has(ep.feedUrl));
   renderFeeds();
   for (const feed of newFeeds) {
     await fetchFeed(feed);
@@ -958,11 +994,20 @@ async function fetchFeed(feed) {
 async function handleAddFeed() {
   const url = elements.feedUrlInput.value.trim();
   if (!url) return;
+  const duplicate = state.feeds.find((f) => f.feedUrl === url);
+  if (duplicate) {
+    elements.addStatus.textContent = 'Feed already added.';
+    return;
+  }
+
+  const removedFeeds = makeRoomForUserFeed();
   elements.addStatus.textContent = 'Loading feed...';
   const feed = { feedUrl: url, title: url, userAdded: true };
   await fetchFeed(feed);
   saveUserFeeds();
-  elements.addStatus.textContent = 'Added';
+  const removedCount = removedFeeds.length;
+  const removalNote = removedCount ? ` (removed ${removedCount} auto feed${removedCount === 1 ? '' : 's'} to make room)` : '';
+  elements.addStatus.textContent = `Added${removalNote}`;
   setTimeout(() => { elements.addStatus.textContent = ''; }, 2000);
   elements.feedUrlInput.value = '';
 }
@@ -1101,7 +1146,8 @@ async function init() {
   loadUserFeeds();
   const cachedTop = loadTopFeedCache();
   if (cachedTop?.feeds?.length) {
-    cachedTop.feeds.forEach((feed) => {
+    const availableSlots = Math.max(0, FEED_LIMIT - state.feeds.length);
+    cachedTop.feeds.slice(0, availableSlots).forEach((feed) => {
       if (!state.feeds.some((f) => f.feedUrl === feed.feedUrl)) {
         state.feeds.push({
           ...feed,
