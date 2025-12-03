@@ -13,7 +13,7 @@ const state = {
   noiseSourceGain: null,
   customNoiseBuffer: null,
   noiseBuffers: new Map(),
-  selectedNoise: 'pool',
+  selectedNoise: 'wires',
   topUpdatedAt: null,
   buffers: new Map(),
   failureCounts: new Map(),
