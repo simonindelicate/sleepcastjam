@@ -198,7 +198,7 @@ async function loadHeroBackgrounds() {
     console.error('Unable to load hero backgrounds via require.context', err);
   }
 
-  if (!images.size && typeof fetch === 'function') {
+  if (typeof fetch === 'function') {
     try {
       const resp = await fetch('/api/backgrounds', { cache: 'no-cache' });
       if (resp.ok) {
