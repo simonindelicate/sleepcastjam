@@ -41,6 +41,7 @@ const TOP_GENRES = {
 };
 
 const NOISE_PROFILES = [
+  { id: 'wires', label: 'Wires', audio: '/src/assets/wires.ogg', art: '/src/assets/wires.jpg' },  
   { id: 'pool', label: 'Pool', audio: '/src/assets/pool.ogg', art: '/src/assets/pool.png' },
   { id: 'rain', label: 'Rain', audio: '/src/assets/rain.ogg', art: '/src/assets/rain.png' },
   { id: 'waves', label: 'Waves', audio: '/src/assets/waves.ogg', art: '/src/assets/waves.png' },
