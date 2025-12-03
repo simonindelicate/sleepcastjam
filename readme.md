@@ -6,7 +6,7 @@ Sleepcast Jam layers podcast snippets over curated white-noise loops so you can 
 - Vanilla HTML/CSS/JS front-end (no build step) served directly from `index.html` and `src/` assets.
 - Web Audio API for noise playback, convolution reverb, and snippet mixing.
 - Netlify Functions in `netlify/functions/`:
-  - `top50` fetches toplists from gpodder and falls back to a static list if the upstream call fails.
+  - `top50` fetches Apple's toplists (via Marketing Tools + classic iTunes RSS) and falls back to a static list if the upstream call fails.
   - `audio` proxies podcast audio to avoid publisher-side CORS limits and caps responses with `Range` requests.
 - `node-fetch` for server-side HTTP calls.
 - Font Awesome icons and locally bundled background/noise assets.
@@ -33,8 +33,8 @@ Sleepcast Jam layers podcast snippets over curated white-noise loops so you can 
    Commit to a Netlify-connected repo or run `npx netlify deploy` with your site configured. The included `netlify.toml` already routes `/api/*` to the functions folder.
 
 ## Top 50 toplist behavior
-- The UI hits `/api/top50` with optional `country` and `genre` params. The function calls the free gpodder toplist API (50 items) and normalizes them into RSS feed URLs.
-- When gpodder is unreachable or returns no entries, the function responds with a small hard-coded feed list and a `warning` field explaining the upstream issue, so the UI stays usable.
+- The UI hits `/api/top50` with optional `country` and `genre` params. The function queries Apple's Marketing Tools and classic iTunes RSS endpoints, then uses the iTunes Lookup API to resolve each podcast's RSS feed URL.
+- If both Apple endpoints are unreachable or return empty data, the function responds with a small hard-coded feed list and a `warning` field explaining the upstream issue, so the UI stays usable.
 
 ## Audio proxy to avoid CORS failures
 Podcast audio files are still hosted by publishers and many do not send permissive CORS headers. The client pulls each snippet through `/api/audio`, a Netlify Function that re-fetches the file server-side and returns it with `Access-Control-Allow-Origin: *`.
