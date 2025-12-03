@@ -62,11 +62,15 @@ exports.handler = async (event) => {
     : 'us';
   const genre = params.genre && /^\d+$/.test(params.genre) ? params.genre : '';
 
+  // Apple appears to cap genre-scoped charts at 50 results; asking for 100 when a
+  // genre is present can yield empty responses. Keep the broader 100-result fetch
+  // for the all-genre case, but drop to 50 when a specific genre is requested.
+  const limit = genre ? 50 : 100;
   const marketingToolsUrl =
-    `https://rss.applemarketingtools.com/api/v2/${country}/podcasts/top/100/podcasts.json` +
+    `https://rss.applemarketingtools.com/api/v2/${country}/podcasts/top/${limit}/podcasts.json` +
     (genre ? `?genre=${genre}` : '');
   const classicItunesUrl =
-    `https://itunes.apple.com/${country}/rss/toppodcasts/limit=100${genre ? `/genre=${genre}` : ''}/json`;
+    `https://itunes.apple.com/${country}/rss/toppodcasts/limit=${limit}${genre ? `/genre=${genre}` : ''}/json`;
 
   let reason = '';
   try {
