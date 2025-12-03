@@ -120,6 +120,21 @@ const heroBackgroundState = {
 };
 
 const BACKGROUND_ROTATION_MS = 3 * 60 * 1000;
+const HERO_BACKGROUNDS = [
+  '/src/assets/backgrounds/FB_IMG_1746949713216.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746949794513.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746949851138.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950013897.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950148866.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950298731.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950317013.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950323262.jpg',
+  '/src/assets/backgrounds/FB_IMG_1746950352140.jpg',
+  '/src/assets/backgrounds/PXL_20241028_025246625~2.jpg',
+  '/src/assets/backgrounds/background.jpg',
+  '/src/assets/backgrounds/background2.jpg',
+  '/src/assets/backgrounds/background3.jpg',
+];
 
 function pruneTitle(rawTitle) {
   if (!rawTitle) return rawTitle;
@@ -164,57 +179,7 @@ function preloadImage(src) {
 }
 
 async function loadHeroBackgrounds() {
-  const images = new Set();
-  const addIfValid = (src) => {
-    if (src && typeof src === 'string') {
-      images.add(src);
-    }
-  };
-
-  const discoverViaApi = async () => {
-    try {
-      const resp = await fetch('/api/backgrounds', { cache: 'no-cache' });
-      if (!resp.ok) return false;
-      const data = await resp.json();
-      (data?.images || []).forEach(addIfValid);
-      return true;
-    } catch (err) {
-      console.error('Unable to fetch hero backgrounds from API', err);
-      return false;
-    }
-  };
-
-  const discoverViaDirectoryListing = async () => {
-    try {
-      const resp = await fetch('/src/assets/backgrounds/', { cache: 'no-cache' });
-      if (!resp.ok) return false;
-      const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('text/html')) return false;
-      const html = await resp.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      const anchors = Array.from(doc.querySelectorAll('a[href]'));
-      anchors
-        .map((a) => a.getAttribute('href'))
-        .filter((href) => /\.(jpg|jpeg|png|webp)$/i.test(href))
-        .map((href) => (href.startsWith('/') ? href : `/src/assets/backgrounds/${href.replace(/^\.\//, '')}`))
-        .forEach(addIfValid);
-      return images.size > 0;
-    } catch (err) {
-      console.error('Unable to parse hero backgrounds directory listing', err);
-      return false;
-    }
-  };
-
-  const loaded = await discoverViaApi();
-  if (!loaded) {
-    await discoverViaDirectoryListing();
-  }
-
-  heroBackgroundState.images = Array.from(images);
-  if (!heroBackgroundState.images.length) {
-    console.warn('No hero backgrounds found in /src/assets/backgrounds.');
-  }
+  heroBackgroundState.images = [...HERO_BACKGROUNDS];
   heroBackgroundState.images.forEach(preloadImage);
 }
 
