@@ -103,11 +103,10 @@ const elements = {
     document.getElementById('heroBgB'),
   ].filter(Boolean),
   controlsAnchor: document.getElementById('controls'),
+  infoAnchor: document.getElementById('infoSection'),
   feedListContainer: document.getElementById('feedListContainer'),
   toggleFeedList: document.getElementById('toggleFeedList'),
-  infoToggle: document.getElementById('infoToggle'),
-  infoPanel: document.getElementById('infoPanel'),
-  closeInfo: document.getElementById('closeInfo'),
+  scrollInfo: document.getElementById('scrollInfo'),
 };
 
 const uiState = {
@@ -176,30 +175,6 @@ function formatRemainingTime(ms) {
   const seconds = totalSeconds % 60;
   const pad = (v) => String(v).padStart(2, '0');
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-}
-
-function openInfoPanel() {
-  if (!elements.infoPanel) return;
-  elements.infoPanel.hidden = false;
-  elements.infoPanel.classList.add('visible');
-  elements.infoToggle?.setAttribute('aria-expanded', 'true');
-}
-
-function closeInfoPanel() {
-  if (!elements.infoPanel) return;
-  elements.infoPanel.classList.remove('visible');
-  elements.infoPanel.hidden = true;
-  elements.infoToggle?.setAttribute('aria-expanded', 'false');
-}
-
-function toggleInfoPanel() {
-  if (!elements.infoPanel) return;
-  const isOpen = elements.infoPanel.classList.contains('visible');
-  if (isOpen) {
-    closeInfoPanel();
-  } else {
-    openInfoPanel();
-  }
 }
 
 function preloadImage(src) {
@@ -1146,11 +1121,6 @@ function attachEvents() {
     { el: elements.loadTopMusic, opts: { genreId: TOP_GENRES.music, label: 'Music Top 50' } },
   ];
 
-  elements.infoToggle?.addEventListener('click', toggleInfoPanel);
-  elements.closeInfo?.addEventListener('click', closeInfoPanel);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeInfoPanel();
-  });
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('focus', handleVisibilityChange);
 
@@ -1179,6 +1149,12 @@ function attachEvents() {
   if (elements.scrollControls && elements.controlsAnchor) {
     elements.scrollControls.addEventListener('click', () => {
       elements.controlsAnchor.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  if (elements.scrollInfo && elements.infoAnchor) {
+    elements.scrollInfo.addEventListener('click', () => {
+      elements.infoAnchor.scrollIntoView({ behavior: 'smooth' });
     });
   }
 
