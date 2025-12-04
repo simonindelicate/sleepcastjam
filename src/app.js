@@ -19,8 +19,10 @@ const state = {
   failureCounts: new Map(),
   isPlaying: false,
   snippetTimeoutId: null,
+  snippetMonitorId: null,
   timerIntervalId: null,
   endTime: null,
+  wakeLock: null,
   diagnostics: {
     snippetAttempts: 0,
     snippetSuccesses: 0,
@@ -103,6 +105,9 @@ const elements = {
   controlsAnchor: document.getElementById('controls'),
   feedListContainer: document.getElementById('feedListContainer'),
   toggleFeedList: document.getElementById('toggleFeedList'),
+  infoToggle: document.getElementById('infoToggle'),
+  infoPanel: document.getElementById('infoPanel'),
+  closeInfo: document.getElementById('closeInfo'),
 };
 
 const uiState = {
@@ -171,6 +176,30 @@ function formatRemainingTime(ms) {
   const seconds = totalSeconds % 60;
   const pad = (v) => String(v).padStart(2, '0');
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+}
+
+function openInfoPanel() {
+  if (!elements.infoPanel) return;
+  elements.infoPanel.hidden = false;
+  elements.infoPanel.classList.add('visible');
+  elements.infoToggle?.setAttribute('aria-expanded', 'true');
+}
+
+function closeInfoPanel() {
+  if (!elements.infoPanel) return;
+  elements.infoPanel.classList.remove('visible');
+  elements.infoPanel.hidden = true;
+  elements.infoToggle?.setAttribute('aria-expanded', 'false');
+}
+
+function toggleInfoPanel() {
+  if (!elements.infoPanel) return;
+  const isOpen = elements.infoPanel.classList.contains('visible');
+  if (isOpen) {
+    closeInfoPanel();
+  } else {
+    openInfoPanel();
+  }
 }
 
 function preloadImage(src) {
@@ -711,12 +740,84 @@ async function playOneSnippet() {
   }
 }
 
+function ensureSnippetMonitor() {
+  if (state.snippetMonitorId) return;
+  state.snippetMonitorId = setInterval(() => {
+    if (!state.isPlaying) return;
+    const nextAt = state.diagnostics.nextSnippetAt;
+    const now = Date.now();
+    const overdue = nextAt ? now - nextAt : 0;
+    if (overdue > 3000 && !state.snippetTimeoutId) {
+      state.diagnostics.lastSnippetMessage = 'Waking snippet scheduler...';
+      updateSnippetStatus();
+      scheduleNextSnippet(1);
+    }
+  }, 5000);
+}
+
+function stopSnippetMonitor() {
+  if (state.snippetMonitorId) {
+    clearInterval(state.snippetMonitorId);
+    state.snippetMonitorId = null;
+  }
+}
+
+async function ensureWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    state.wakeLock = await navigator.wakeLock.request('screen');
+    state.wakeLock.addEventListener('release', () => {
+      state.wakeLock = null;
+    });
+  } catch (err) {
+    console.warn('Wake lock unavailable', err);
+  }
+}
+
+function releaseWakeLock() {
+  if (state.wakeLock?.release) {
+    state.wakeLock.release().catch(() => {});
+  }
+  state.wakeLock = null;
+}
+
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    if (state.audioCtx?.state === 'suspended' && state.isPlaying) {
+      state.audioCtx.resume();
+    }
+    if (!state.wakeLock && state.isPlaying) {
+      ensureWakeLock();
+    }
+    if (state.isPlaying) {
+      ensureSnippetMonitor();
+      const nextAt = state.diagnostics.nextSnippetAt;
+      if (nextAt && Date.now() - nextAt > 2000) {
+        scheduleNextSnippet(1);
+      }
+    }
+  }
+}
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('/service-worker.js');
+  } catch (err) {
+    console.warn('Service worker registration failed', err);
+  }
+}
+
 function scheduleNextSnippet(forcedGapSeconds = null) {
   if (!state.isPlaying) return;
   const { minGap, maxGap } = getSnippetConfig();
   const gapSeconds = forcedGapSeconds ?? randomBetween(minGap, maxGap);
   state.diagnostics.nextSnippetAt = Date.now() + gapSeconds * 1000;
   updateSnippetStatus();
+  if (state.snippetTimeoutId) {
+    clearTimeout(state.snippetTimeoutId);
+  }
+  ensureSnippetMonitor();
   state.snippetTimeoutId = setTimeout(async () => {
     const success = await playOneSnippet();
     scheduleNextSnippet(success ? null : 1);
@@ -728,6 +829,7 @@ function stopSnippets() {
     clearTimeout(state.snippetTimeoutId);
     state.snippetTimeoutId = null;
   }
+  stopSnippetMonitor();
 }
 
 function stopTimer() {
@@ -832,6 +934,8 @@ async function startPlayback() {
   state.isPlaying = true;
   updatePlayStatus('Playing');
   syncPlayButtons(true);
+  ensureSnippetMonitor();
+  await ensureWakeLock();
   const firstSuccess = await playOneSnippet();
   scheduleNextSnippet(firstSuccess ? null : 1);
 
@@ -857,6 +961,7 @@ function stopPlayback(fromTimer = false) {
   }
   stopSnippets();
   stopTimer();
+  releaseWakeLock();
   state.isPlaying = false;
   state.diagnostics.nextSnippetAt = null;
   updateSnippetStatus();
@@ -1041,6 +1146,14 @@ function attachEvents() {
     { el: elements.loadTopMusic, opts: { genreId: TOP_GENRES.music, label: 'Music Top 50' } },
   ];
 
+  elements.infoToggle?.addEventListener('click', toggleInfoPanel);
+  elements.closeInfo?.addEventListener('click', closeInfoPanel);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeInfoPanel();
+  });
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('focus', handleVisibilityChange);
+
   elements.addFeedBtn.addEventListener('click', handleAddFeed);
   topLoaders.forEach(({ el, opts }) => {
     el?.addEventListener('click', () => handleLoadTop(opts));
@@ -1156,3 +1269,4 @@ async function init() {
 }
 
 init();
+registerServiceWorker();
