@@ -151,6 +151,18 @@ function pruneTitle(rawTitle) {
   return title || rawTitle.trim();
 }
 
+function getGhostTitle(rawTitle) {
+  const pruned = pruneTitle(rawTitle);
+  if (!pruned) return rawTitle;
+
+  const noPunctuation = pruned.replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+  if (!noPunctuation) return pruned;
+
+  const words = noPunctuation.split(/\s+/).filter(Boolean);
+  const limited = words.slice(0, 5).join(' ');
+  return limited || noPunctuation || pruned;
+}
+
 function setNoiseLabel(text) {
   if (elements.noiseLabel) {
     elements.noiseLabel.textContent = `Noise: ${text}`;
@@ -427,7 +439,7 @@ function displayGhost(title) {
   if (!elements.ghostContainer || !title) return;
   const ghost = document.createElement('div');
   ghost.className = 'ghost';
-  ghost.textContent = pruneTitle(title) || title;
+  ghost.textContent = getGhostTitle(title) || title;
   const padding = 12;
   const x = padding + Math.random() * (100 - padding * 2);
   const y = padding + Math.random() * (100 - padding * 2);
