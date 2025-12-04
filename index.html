@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
   <title>Podcast Noise</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" sizes="192x192" href="/src/assets/icons/icon-192.png" />
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
@@ -138,6 +141,27 @@
       z-index: 2;
       pointer-events: none;
     }
+    .hero-quick-link {
+      pointer-events: auto;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: #e2e8f0;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-width: 46px;
+      height: 44px;
+      border-radius: 12px;
+      font-size: 14px;
+      padding: 8px 12px;
+      opacity: 0.9;
+      transition: opacity 0.2s ease, transform 0.08s ease;
+    }
+    .hero-quick-link:hover,
+    .hero-quick-link:focus-visible { opacity: 1; }
+    .hero-quick-link:active { transform: scale(0.99); }
     .hero-play {
       width: 150px;
       height: 150px;
@@ -189,7 +213,8 @@
     }
     .hero-background-toggle:active { transform: scale(0.99); }
     .hero-controls,
-    .hero-background-toggle {
+    .hero-background-toggle,
+    .hero-quick-link {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -228,6 +253,25 @@
       margin-bottom: 16px;
       box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
       border: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .info-section {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .info-photo {
+      width: 100%;
+      max-height: 240px;
+      object-fit: cover;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .info-copy p {
+      margin: 8px 0 0 0;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 15px;
     }
     h2 { color: #f8fafc; margin-top: 0; }
     button {
@@ -336,6 +380,7 @@
     @media (max-width: 640px) {
       .hero-timer { bottom: 120px; font-size: 32px; }
       .noise-chip { right: 16px; bottom: 18px; padding: 10px 14px; }
+      .info-section { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -358,12 +403,31 @@
           <i class="fa-solid fa-image"></i>
           <span class="sr-only">Change background</span>
         </button>
+        <button id="scrollInfo" class="hero-quick-link" type="button" aria-label="Learn more">
+          <i class="fa-solid fa-circle-info"></i>
+        </button>
       </div>
     </div>
   </div>
 
-  <main id="controls">
-    <section>
+  <main>
+    <section id="infoSection">
+      <h2>What is this?</h2>
+      <div class="info-section">
+        <img src="/src/assets/wires.jpg" alt="Placeholder scenic photography" class="info-photo" />
+        <div class="info-copy">
+          <p>
+            Placeholder copy about winding down, layering ambient noise, and catching snippets of distant conversations.
+            Swap this text for real guidance or storytelling later on.
+          </p>
+          <p>
+            Use the controls below to pick podcast feeds, adjust snippet cadence, and balance the ambience so it keeps
+            playing even when your screen goes to sleep.
+          </p>
+        </div>
+      </div>
+    </section>
+    <section id="controls">
       <h2>Feeds</h2>
       <div class="row spaced" style="margin-bottom: 12px;">
         <div class="row feed-actions" style="gap: 8px 10px;">
