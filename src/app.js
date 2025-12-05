@@ -20,6 +20,7 @@ const state = {
   isPlaying: false,
   snippetTimeoutId: null,
   snippetMonitorId: null,
+  backgroundGuardId: null,
   timerIntervalId: null,
   endTime: null,
   wakeLock: null,
@@ -749,6 +750,39 @@ function stopSnippetMonitor() {
   }
 }
 
+function startBackgroundGuard() {
+  if (state.backgroundGuardId) return;
+
+  const wakeScheduler = async () => {
+    if (!state.isPlaying) return;
+
+    if (state.audioCtx?.state === 'suspended') {
+      try {
+        await state.audioCtx.resume();
+      } catch (err) {
+        console.warn('Unable to resume audio context in background', err);
+      }
+    }
+
+    const nextAt = state.diagnostics.nextSnippetAt;
+    const overdue = nextAt ? Date.now() - nextAt : 0;
+    if (overdue > 2000 && !state.snippetTimeoutId) {
+      state.diagnostics.lastSnippetMessage = 'Background wake for snippet';
+      updateSnippetStatus();
+      scheduleNextSnippet(1);
+    }
+  };
+
+  state.backgroundGuardId = setInterval(wakeScheduler, 2000);
+}
+
+function stopBackgroundGuard() {
+  if (state.backgroundGuardId) {
+    clearInterval(state.backgroundGuardId);
+    state.backgroundGuardId = null;
+  }
+}
+
 async function ensureWakeLock() {
   if (!('wakeLock' in navigator)) return;
   try {
@@ -778,11 +812,14 @@ function handleVisibilityChange() {
     }
     if (state.isPlaying) {
       ensureSnippetMonitor();
+      stopBackgroundGuard();
       const nextAt = state.diagnostics.nextSnippetAt;
       if (nextAt && Date.now() - nextAt > 2000) {
         scheduleNextSnippet(1);
       }
     }
+  } else if (state.isPlaying) {
+    startBackgroundGuard();
   }
 }
 
@@ -922,6 +959,7 @@ async function startPlayback() {
   updatePlayStatus('Playing');
   syncPlayButtons(true);
   ensureSnippetMonitor();
+  startBackgroundGuard();
   await ensureWakeLock();
   const firstSuccess = await playOneSnippet();
   scheduleNextSnippet(firstSuccess ? null : 1);
@@ -948,6 +986,7 @@ function stopPlayback(fromTimer = false) {
   }
   stopSnippets();
   stopTimer();
+  stopBackgroundGuard();
   releaseWakeLock();
   state.isPlaying = false;
   state.diagnostics.nextSnippetAt = null;
